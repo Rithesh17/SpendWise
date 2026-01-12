@@ -4,7 +4,7 @@ A free, privacy-focused personal expense tracking web application. Track your sp
 
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
 ![SvelteKit](https://img.shields.io/badge/SvelteKit-5.0-orange.svg)
-![Status](https://img.shields.io/badge/status-Phase%201%20Complete-green.svg)
+![Status](https://img.shields.io/badge/status-Phase%202%20Complete-green.svg)
 
 ## ✨ Features
 
@@ -68,9 +68,9 @@ expense-manager/
 ├── src/
 │   ├── lib/
 │   │   ├── components/     # Reusable UI components
-│   │   ├── stores/         # Svelte stores (Phase 2)
-│   │   ├── types/          # TypeScript interfaces (Phase 2)
-│   │   ├── utils/          # Utility functions (Phase 2)
+│   │   ├── stores/         # Svelte stores with localStorage persistence
+│   │   ├── types/          # TypeScript interfaces
+│   │   ├── utils/          # Utility functions
 │   │   └── index.css       # Global styles & theme
 │   └── routes/
 │       ├── +page.svelte    # Dashboard
@@ -92,7 +92,7 @@ expense-manager/
 | Phase | Name | Status |
 |-------|------|--------|
 | 1 | Project Setup & Core UI | ✅ Complete |
-| 2 | Data Layer & Storage | 🔲 Not Started |
+| 2 | Data Layer & Storage | ✅ Complete |
 | 3 | Expense Management | 🔲 Not Started |
 | 4 | Category Management | 🔲 Not Started |
 | 5 | Dashboard & Visualizations | 🔲 Not Started |

@@ -2,14 +2,27 @@
 	import { NavigationBar, Footer } from 'statue-ssg';
 	import { page } from '$app/stores';
 	import { onNavigate } from '$app/navigation';
+	import { onMount } from 'svelte';
 	import '$lib/index.css';
 	import { BottomNav } from '$lib/components';
+	import { initializeStores } from '$lib/stores/app';
+	import { shouldLoadDemoData, loadDemoData } from '$lib/stores/seed-data';
 
 	let { data, children } = $props();
 
 	let searchConfig = $derived(data.searchConfig);
 	let navbarConfig = $derived(data.navbarConfig);
 	let currentPath = $derived($page.url.pathname);
+
+	// Initialize stores and load demo data if needed
+	onMount(() => {
+		// Load demo data for first-time users
+		if (shouldLoadDemoData()) {
+			loadDemoData();
+		}
+		// Initialize all stores from localStorage
+		initializeStores();
+	});
 
 	// Enable View Transitions API for smooth page transitions
 	onNavigate((navigation) => {

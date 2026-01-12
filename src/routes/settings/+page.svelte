@@ -1,22 +1,96 @@
-<script>
+<script lang="ts">
 	import { PageHeader } from '$lib/components';
+	import { preferences, preferenceActions } from '$lib/stores/preferences';
+	import { expenses, categories, budgets } from '$lib/stores';
+	import { 
+		downloadAsJSON, 
+		downloadAsCSV, 
+		importFromFile,
+		getFormattedStorageSize,
+		clearStorage
+	} from '$lib/utils/storage';
+	import type { DateFormat, Theme } from '$lib/types';
 
-	// Demo state - will be replaced with store data later
-	let currency = $state('USD');
-	let dateFormat = $state('MM/DD/YYYY');
-	let theme = $state('dark');
-	let displayName = $state('John Doe');
-	let email = $state('john@example.com');
+	// Local state bound to preferences
+	let currency = $derived($preferences.currency);
+	let dateFormat = $derived($preferences.dateFormat);
+	let theme = $derived($preferences.theme);
+	let displayName = $state('User'); // Will be from Firebase in Phase 9
+	let email = $state('user@example.com'); // Will be from Firebase in Phase 9
 
 	const currencies = ['USD', 'EUR', 'GBP', 'JPY', 'CAD', 'AUD', 'INR'];
-	const dateFormats = ['MM/DD/YYYY', 'DD/MM/YYYY', 'YYYY-MM-DD'];
+	const dateFormats: DateFormat[] = ['MM/DD/YYYY', 'DD/MM/YYYY', 'YYYY-MM-DD'];
 
-	function handleSave() {
-		alert('Settings saved! (Demo mode - will save to store in Phase 2)');
+	// Stats
+	let expenseCount = $derived($expenses.length);
+	let categoryCount = $derived($categories.length);
+	let budgetCount = $derived($budgets.length);
+	let storageSize = $state('0 KB');
+
+	// Update storage size on mount
+	$effect(() => {
+		storageSize = getFormattedStorageSize();
+	});
+
+	// UI state
+	let importMessage = $state('');
+	let importSuccess = $state(false);
+
+	function handleCurrencyChange(e: Event) {
+		const target = e.target as HTMLSelectElement;
+		preferenceActions.setCurrency(target.value);
 	}
 
-	function handleExport() {
-		alert('Export functionality will be available in Phase 2.');
+	function handleDateFormatChange(e: Event) {
+		const target = e.target as HTMLSelectElement;
+		preferenceActions.setDateFormat(target.value as DateFormat);
+	}
+
+	function handleThemeChange(newTheme: Theme) {
+		preferenceActions.setTheme(newTheme);
+	}
+
+	function handleExportJSON() {
+		const date = new Date().toISOString().split('T')[0];
+		downloadAsJSON(`expense-manager-backup-${date}.json`);
+	}
+
+	function handleExportCSV() {
+		const date = new Date().toISOString().split('T')[0];
+		downloadAsCSV(`expenses-${date}.csv`);
+	}
+
+	async function handleImport(e: Event) {
+		const target = e.target as HTMLInputElement;
+		const file = target.files?.[0];
+		
+		if (!file) return;
+		
+		importMessage = 'Importing...';
+		importSuccess = false;
+		
+		const result = await importFromFile(file);
+		importMessage = result.message;
+		importSuccess = result.success;
+		
+		if (result.success) {
+			// Reload the page to refresh stores
+			setTimeout(() => {
+				window.location.reload();
+			}, 1500);
+		}
+		
+		// Clear the input
+		target.value = '';
+	}
+
+	function handleClearData() {
+		if (confirm('Are you sure you want to delete ALL your data? This cannot be undone.')) {
+			if (confirm('This will permanently delete all expenses, categories, and budgets. Are you absolutely sure?')) {
+				clearStorage();
+				window.location.reload();
+			}
+		}
 	}
 </script>
 
@@ -51,7 +125,9 @@
 							id="displayName"
 							class="em-input"
 							bind:value={displayName}
+							disabled
 						/>
+						<p class="input-hint">Account settings require Firebase authentication (Phase 9).</p>
 					</div>
 
 					<div class="form-group">
@@ -63,15 +139,6 @@
 							bind:value={email}
 							disabled
 						/>
-						<p class="input-hint">Email cannot be changed. Login with Firebase required.</p>
-					</div>
-
-					<div class="form-group">
-						<label class="em-label">Password</label>
-						<button class="em-btn em-btn-ghost" disabled>
-							Change Password
-						</button>
-						<p class="input-hint">Password management requires Firebase authentication.</p>
 					</div>
 				</div>
 			</section>
@@ -89,7 +156,7 @@
 				<div class="settings-form">
 					<div class="form-group">
 						<label class="em-label" for="currency">Currency</label>
-						<select id="currency" class="em-input" bind:value={currency}>
+						<select id="currency" class="em-input" value={currency} onchange={handleCurrencyChange}>
 							{#each currencies as curr}
 								<option value={curr}>{curr}</option>
 							{/each}
@@ -98,7 +165,7 @@
 
 					<div class="form-group">
 						<label class="em-label" for="dateFormat">Date Format</label>
-						<select id="dateFormat" class="em-input" bind:value={dateFormat}>
+						<select id="dateFormat" class="em-input" value={dateFormat} onchange={handleDateFormatChange}>
 							{#each dateFormats as format}
 								<option value={format}>{format}</option>
 							{/each}
@@ -106,12 +173,15 @@
 					</div>
 
 					<div class="form-group">
-						<label class="em-label">Theme</label>
-						<div class="theme-options">
+						<label class="em-label" id="theme-label">Theme</label>
+						<div class="theme-options" role="radiogroup" aria-labelledby="theme-label">
 							<button 
+								type="button"
 								class="theme-btn" 
 								class:active={theme === 'dark'}
-								onclick={() => theme = 'dark'}
+								onclick={() => handleThemeChange('dark')}
+								role="radio"
+								aria-checked={theme === 'dark'}
 							>
 								<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
 									<path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
@@ -119,9 +189,12 @@
 								Dark
 							</button>
 							<button 
+								type="button"
 								class="theme-btn" 
 								class:active={theme === 'light'}
-								onclick={() => theme = 'light'}
+								onclick={() => handleThemeChange('light')}
+								role="radio"
+								aria-checked={theme === 'light'}
 							>
 								<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
 									<circle cx="12" cy="12" r="5"></circle>
@@ -152,33 +225,74 @@
 					Data Management
 				</h2>
 
+				<!-- Data Stats -->
+				<div class="data-stats">
+					<div class="stat-item">
+						<span class="stat-value">{expenseCount}</span>
+						<span class="stat-label">Expenses</span>
+					</div>
+					<div class="stat-item">
+						<span class="stat-value">{categoryCount}</span>
+						<span class="stat-label">Categories</span>
+					</div>
+					<div class="stat-item">
+						<span class="stat-value">{budgetCount}</span>
+						<span class="stat-label">Budgets</span>
+					</div>
+					<div class="stat-item">
+						<span class="stat-value">{storageSize}</span>
+						<span class="stat-label">Storage Used</span>
+					</div>
+				</div>
+
 				<div class="data-actions">
 					<div class="data-action">
 						<div class="action-info">
-							<h3 class="action-title">Export Data</h3>
-							<p class="action-description">Download all your expenses as JSON or CSV</p>
+							<h3 class="action-title">Export Data (JSON)</h3>
+							<p class="action-description">Download all your data as a backup file</p>
 						</div>
-						<button class="em-btn em-btn-ghost" onclick={handleExport}>
-							Export
+						<button class="em-btn em-btn-ghost" onclick={handleExportJSON}>
+							Export JSON
+						</button>
+					</div>
+
+					<div class="data-action">
+						<div class="action-info">
+							<h3 class="action-title">Export Expenses (CSV)</h3>
+							<p class="action-description">Download expenses in spreadsheet format</p>
+						</div>
+						<button class="em-btn em-btn-ghost" onclick={handleExportCSV}>
+							Export CSV
 						</button>
 					</div>
 
 					<div class="data-action">
 						<div class="action-info">
 							<h3 class="action-title">Import Data</h3>
-							<p class="action-description">Import expenses from a JSON or CSV file</p>
+							<p class="action-description">Restore from a JSON backup file</p>
+							{#if importMessage}
+								<p class="import-message" class:success={importSuccess} class:error={!importSuccess}>
+									{importMessage}
+								</p>
+							{/if}
 						</div>
-						<button class="em-btn em-btn-ghost" onclick={handleExport}>
+						<label class="em-btn em-btn-ghost import-btn">
 							Import
-						</button>
+							<input 
+								type="file" 
+								accept=".json"
+								onchange={handleImport}
+								hidden
+							/>
+						</label>
 					</div>
 
 					<div class="data-action danger">
 						<div class="action-info">
 							<h3 class="action-title">Delete All Data</h3>
-							<p class="action-description">Permanently delete all your expenses and settings</p>
+							<p class="action-description">Permanently delete all expenses and settings</p>
 						</div>
-						<button class="em-btn em-btn-danger">
+						<button class="em-btn em-btn-danger" onclick={handleClearData}>
 							Delete All
 						</button>
 					</div>
@@ -203,11 +317,11 @@
 					</div>
 					<div class="about-row">
 						<span class="about-label">Build</span>
-						<span class="about-value">Phase 1 - Core UI</span>
+						<span class="about-value">Phase 2 - Data Layer</span>
 					</div>
 					<div class="about-row">
-						<span class="about-label">License</span>
-						<span class="about-value">MIT</span>
+						<span class="about-label">Storage</span>
+						<span class="about-value">LocalStorage</span>
 					</div>
 				</div>
 
@@ -218,20 +332,9 @@
 						</svg>
 						GitHub
 					</a>
-					<a href="/privacy" class="about-link">Privacy Policy</a>
-					<a href="/terms" class="about-link">Terms of Service</a>
+					<a href="/about" class="about-link">About</a>
 				</div>
 			</section>
-		</div>
-
-		<!-- Save Button -->
-		<div class="save-bar">
-			<button class="em-btn em-btn-primary" onclick={handleSave}>
-				<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-					<polyline points="20 6 9 17 4 12"></polyline>
-				</svg>
-				Save Changes
-			</button>
 		</div>
 	</div>
 </div>
@@ -319,6 +422,33 @@
 		color: var(--em-text-primary);
 	}
 
+	/* Data Stats */
+	.data-stats {
+		display: grid;
+		grid-template-columns: repeat(4, 1fr);
+		gap: 1rem;
+		padding: 1rem;
+		background-color: var(--em-bg-tertiary);
+		border-radius: var(--em-radius-md);
+		margin-bottom: 1.5rem;
+	}
+
+	.stat-item {
+		text-align: center;
+	}
+
+	.stat-value {
+		display: block;
+		font-size: 1.5rem;
+		font-weight: 700;
+		color: var(--em-text-primary);
+	}
+
+	.stat-label {
+		font-size: 0.75rem;
+		color: var(--em-text-muted);
+	}
+
 	/* Data Actions */
 	.data-actions {
 		display: flex;
@@ -350,6 +480,24 @@
 		font-size: 0.75rem;
 		color: var(--em-text-muted);
 		margin: 0;
+	}
+
+	.import-message {
+		font-size: 0.75rem;
+		margin: 0.5rem 0 0;
+		font-weight: 500;
+	}
+
+	.import-message.success {
+		color: var(--em-income);
+	}
+
+	.import-message.error {
+		color: var(--em-expense);
+	}
+
+	.import-btn {
+		cursor: pointer;
 	}
 
 	/* About Section */
@@ -394,17 +542,11 @@
 		text-decoration: underline;
 	}
 
-	/* Save Bar */
-	.save-bar {
-		display: flex;
-		justify-content: flex-end;
-		margin-top: 2rem;
-		padding-top: 1.5rem;
-		border-top: 1px solid var(--em-border);
-		max-width: 800px;
-	}
-
 	@media (max-width: 600px) {
+		.data-stats {
+			grid-template-columns: repeat(2, 1fr);
+		}
+
 		.data-action {
 			flex-direction: column;
 			align-items: stretch;

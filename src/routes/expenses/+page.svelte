@@ -1,57 +1,41 @@
-<script>
+<script lang="ts">
 	import { PageHeader, EmptyState } from '$lib/components';
-
-	// Demo data - will be replaced with store data later
-	const expenses = [
-		{ id: 1, description: 'Coffee & Snacks', amount: 12.50, category: 'Food', icon: '🍔', date: '2026-01-12', paymentMethod: 'Card' },
-		{ id: 2, description: 'Uber Ride', amount: 18.75, category: 'Transport', icon: '🚗', date: '2026-01-12', paymentMethod: 'Digital' },
-		{ id: 3, description: 'Netflix Subscription', amount: 15.99, category: 'Entertainment', icon: '🎬', date: '2026-01-11', paymentMethod: 'Card' },
-		{ id: 4, description: 'Grocery Shopping', amount: 67.30, category: 'Food', icon: '🍔', date: '2026-01-11', paymentMethod: 'Card' },
-		{ id: 5, description: 'Electric Bill', amount: 124.00, category: 'Utilities', icon: '💡', date: '2026-01-10', paymentMethod: 'Bank' },
-		{ id: 6, description: 'Gym Membership', amount: 49.99, category: 'Health', icon: '💪', date: '2026-01-10', paymentMethod: 'Card' },
-		{ id: 7, description: 'Book Purchase', amount: 24.99, category: 'Education', icon: '📚', date: '2026-01-09', paymentMethod: 'Digital' },
-		{ id: 8, description: 'Restaurant Dinner', amount: 85.50, category: 'Food', icon: '🍔', date: '2026-01-08', paymentMethod: 'Card' },
-	];
+	import { 
+		filteredExpenses, 
+		expenseFilters, 
+		expenseSort,
+		expenseActions,
+		categories 
+	} from '$lib/stores';
+	import { preferences } from '$lib/stores/preferences';
+	import { formatCurrency, formatDate } from '$lib/utils';
 
 	let searchQuery = $state('');
 	let selectedCategory = $state('all');
 	let sortBy = $state('date-desc');
 
-	const categories = ['all', 'Food', 'Transport', 'Entertainment', 'Utilities', 'Health', 'Education'];
-
-	let filteredExpenses = $derived(() => {
-		let result = [...expenses];
-		
-		// Filter by search
-		if (searchQuery) {
-			result = result.filter(e => 
-				e.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
-				e.category.toLowerCase().includes(searchQuery.toLowerCase())
-			);
-		}
-		
-		// Filter by category
-		if (selectedCategory !== 'all') {
-			result = result.filter(e => e.category === selectedCategory);
-		}
-		
-		// Sort
-		if (sortBy === 'date-desc') {
-			result.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-		} else if (sortBy === 'date-asc') {
-			result.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
-		} else if (sortBy === 'amount-desc') {
-			result.sort((a, b) => b.amount - a.amount);
-		} else if (sortBy === 'amount-asc') {
-			result.sort((a, b) => a.amount - b.amount);
-		}
-		
-		return result;
+	// Sync local state with store
+	$effect(() => {
+		expenseActions.setFilters({ 
+			search: searchQuery, 
+			categoryId: selectedCategory 
+		});
 	});
 
-	function formatDate(dateStr) {
-		const date = new Date(dateStr);
-		return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+	$effect(() => {
+		const [field, direction] = sortBy.split('-') as ['date' | 'amount' | 'description', 'asc' | 'desc'];
+		expenseActions.setSort(field, direction);
+	});
+
+	function getCategoryInfo(categoryId: string) {
+		const cat = $categories.find(c => c.id === categoryId);
+		return cat || { name: 'Unknown', icon: '📋', color: '#64748B' };
+	}
+
+	function handleDelete(id: string) {
+		if (confirm('Are you sure you want to delete this expense?')) {
+			expenseActions.delete(id);
+		}
 	}
 </script>
 
@@ -84,8 +68,9 @@
 			
 			<div class="filter-controls">
 				<select class="filter-select em-input" bind:value={selectedCategory}>
-					{#each categories as cat}
-						<option value={cat}>{cat === 'all' ? 'All Categories' : cat}</option>
+					<option value="all">All Categories</option>
+					{#each $categories as cat}
+						<option value={cat.id}>{cat.icon} {cat.name}</option>
 					{/each}
 				</select>
 				
@@ -100,7 +85,7 @@
 
 		<!-- Expense List -->
 		<div class="expense-list em-card">
-			{#if filteredExpenses().length === 0}
+			{#if $filteredExpenses.length === 0}
 				<EmptyState 
 					title="No expenses found"
 					message="Try adjusting your filters or add a new expense"
@@ -117,25 +102,28 @@
 					<span class="header-item actions">Actions</span>
 				</div>
 				
-				{#each filteredExpenses() as expense}
+				{#each $filteredExpenses as expense}
+					{@const category = getCategoryInfo(expense.categoryId)}
 					<div class="list-row">
 						<div class="cell description">
-							<span class="expense-icon">{expense.icon}</span>
+							<span class="expense-icon">{category.icon}</span>
 							<span class="expense-name">{expense.description}</span>
 						</div>
 						<div class="cell category">
-							<span class="category-badge">{expense.category}</span>
+							<span class="category-badge" style="background-color: {category.color}20; color: {category.color};">
+								{category.name}
+							</span>
 						</div>
-						<div class="cell date">{formatDate(expense.date)}</div>
-						<div class="cell amount amount-negative">-${expense.amount.toFixed(2)}</div>
+						<div class="cell date">{formatDate(expense.date, $preferences.dateFormat)}</div>
+						<div class="cell amount amount-negative">-{formatCurrency(expense.amount, $preferences.currency)}</div>
 						<div class="cell actions">
-							<button class="action-btn" aria-label="Edit expense">
+							<a href="/expenses/{expense.id}" class="action-btn" aria-label="View expense">
 								<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-									<path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
-									<path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+									<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+									<circle cx="12" cy="12" r="3"></circle>
 								</svg>
-							</button>
-							<button class="action-btn delete" aria-label="Delete expense">
+							</a>
+							<button class="action-btn delete" aria-label="Delete expense" onclick={() => handleDelete(expense.id)}>
 								<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
 									<polyline points="3 6 5 6 21 6"></polyline>
 									<path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
@@ -144,10 +132,14 @@
 						</div>
 					</div>
 				{/each}
+				
+				<div class="list-footer">
+					<span class="count">{$filteredExpenses.length} expense{$filteredExpenses.length !== 1 ? 's' : ''}</span>
+				</div>
 			{/if}
 		</div>
 
-		<!-- Add Button (Mobile visible in bottom nav) -->
+		<!-- Add Button -->
 		<a href="/add" class="add-expense-btn em-btn em-btn-primary">
 			<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
 				<line x1="12" y1="5" x2="12" y2="19"></line>
@@ -301,11 +293,9 @@
 	.category-badge {
 		display: inline-block;
 		padding: 0.25rem 0.75rem;
-		background-color: var(--em-bg-tertiary);
 		border-radius: var(--em-radius-full);
 		font-size: 0.75rem;
 		font-weight: 500;
-		color: var(--em-text-secondary);
 	}
 
 	.cell.date {
@@ -336,6 +326,7 @@
 		color: var(--em-text-secondary);
 		cursor: pointer;
 		transition: all var(--em-transition-fast);
+		text-decoration: none;
 	}
 
 	.action-btn:hover {
@@ -346,6 +337,17 @@
 	.action-btn.delete:hover {
 		background-color: var(--em-expense-bg);
 		color: var(--em-expense);
+	}
+
+	.list-footer {
+		padding: 1rem 1.25rem;
+		border-top: 1px solid var(--em-border);
+		text-align: center;
+	}
+
+	.count {
+		font-size: 0.875rem;
+		color: var(--em-text-muted);
 	}
 
 	.add-expense-btn {

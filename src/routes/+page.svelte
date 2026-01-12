@@ -1,29 +1,49 @@
-<script>
+<script lang="ts">
 	import { PageHeader, StatCard, EmptyState } from '$lib/components';
+	import { 
+		expenses, 
+		todayExpenses, 
+		weekExpenses, 
+		monthExpenses,
+		todayStats,
+		weekStats,
+		monthStats,
+		categories,
+		overallBudgetProgress,
+		categoryBudgetProgress
+	} from '$lib/stores';
+	import { formatCurrency, formatRelativeDate, calculateCategoryStats } from '$lib/utils';
+	import { preferences } from '$lib/stores/preferences';
 
-	// Demo data - will be replaced with store data later
-	const stats = {
-		todayTotal: '$45.50',
-		weekTotal: '$234.80',
-		monthTotal: '$1,247.35',
-		budgetRemaining: '$752.65'
-	};
+	// Get recent expenses (last 5)
+	let recentExpenses = $derived($expenses.slice(0, 5));
+	
+	// Get category stats for the month
+	let categoryStats = $derived(calculateCategoryStats($monthExpenses, $categories));
+	
+	// Get top 5 categories
+	let topCategories = $derived(categoryStats.slice(0, 5));
+	
+	// Budget remaining calculation
+	let budgetRemaining = $derived(() => {
+		if ($overallBudgetProgress) {
+			return $overallBudgetProgress.remaining;
+		}
+		return 0;
+	});
+	
+	let budgetPercentage = $derived(() => {
+		if ($overallBudgetProgress) {
+			return 100 - $overallBudgetProgress.percentage;
+		}
+		return 100;
+	});
 
-	const recentExpenses = [
-		{ id: 1, description: 'Coffee & Snacks', amount: 12.50, category: 'Food', icon: '🍔', date: 'Today' },
-		{ id: 2, description: 'Uber Ride', amount: 18.75, category: 'Transport', icon: '🚗', date: 'Today' },
-		{ id: 3, description: 'Netflix Subscription', amount: 15.99, category: 'Entertainment', icon: '🎬', date: 'Yesterday' },
-		{ id: 4, description: 'Grocery Shopping', amount: 67.30, category: 'Food', icon: '🍔', date: 'Yesterday' },
-		{ id: 5, description: 'Electric Bill', amount: 124.00, category: 'Utilities', icon: '💡', date: '2 days ago' }
-	];
-
-	const topCategories = [
-		{ name: 'Food & Dining', amount: 450.25, percentage: 36, color: 'var(--em-cat-food)' },
-		{ name: 'Transport', amount: 285.50, percentage: 23, color: 'var(--em-cat-transport)' },
-		{ name: 'Entertainment', amount: 198.00, percentage: 16, color: 'var(--em-cat-entertainment)' },
-		{ name: 'Utilities', amount: 180.00, percentage: 14, color: 'var(--em-cat-utilities)' },
-		{ name: 'Shopping', amount: 133.60, percentage: 11, color: 'var(--em-cat-shopping)' }
-	];
+	// Get category info for an expense
+	function getCategoryInfo(categoryId: string) {
+		const cat = $categories.find(c => c.id === categoryId);
+		return cat || { name: 'Unknown', icon: '📋', color: '#64748B' };
+	}
 </script>
 
 <svelte:head>
@@ -42,30 +62,26 @@
 		<section class="stats-grid">
 			<StatCard 
 				title="Today" 
-				value={stats.todayTotal}
-				subtitle="3 expenses"
+				value={formatCurrency($todayStats.total, $preferences.currency)}
+				subtitle="{$todayStats.count} expense{$todayStats.count !== 1 ? 's' : ''}"
 				color="expense"
 			/>
 			<StatCard 
 				title="This Week" 
-				value={stats.weekTotal}
-				trend="up"
-				trendValue="+12%"
-				subtitle="vs last week"
+				value={formatCurrency($weekStats.total, $preferences.currency)}
+				subtitle="{$weekStats.count} expense{$weekStats.count !== 1 ? 's' : ''}"
 			/>
 			<StatCard 
 				title="This Month" 
-				value={stats.monthTotal}
-				trend="down"
-				trendValue="-5%"
-				subtitle="vs last month"
+				value={formatCurrency($monthStats.total, $preferences.currency)}
+				subtitle="{$monthStats.count} expense{$monthStats.count !== 1 ? 's' : ''}"
 				color="expense"
 			/>
 			<StatCard 
 				title="Budget Left" 
-				value={stats.budgetRemaining}
-				subtitle="38% remaining"
-				color="income"
+				value={formatCurrency(budgetRemaining(), $preferences.currency)}
+				subtitle="{Math.round(budgetPercentage())}% remaining"
+				color={budgetPercentage() > 20 ? 'income' : 'warning'}
 			/>
 		</section>
 
@@ -78,20 +94,31 @@
 					<a href="/expenses" class="view-all">View All →</a>
 				</div>
 				
-				<div class="expense-list">
-					{#each recentExpenses as expense}
-						<div class="expense-item">
-							<div class="expense-icon">{expense.icon}</div>
-							<div class="expense-details">
-								<span class="expense-description">{expense.description}</span>
-								<span class="expense-meta">{expense.category} • {expense.date}</span>
-							</div>
-							<div class="expense-amount amount-negative">
-								-${expense.amount.toFixed(2)}
-							</div>
-						</div>
-					{/each}
-				</div>
+				{#if recentExpenses.length === 0}
+					<EmptyState
+						title="No expenses yet"
+						message="Start tracking by adding your first expense"
+						icon="💸"
+						actionLabel="Add Expense"
+						actionHref="/add"
+					/>
+				{:else}
+					<div class="expense-list">
+						{#each recentExpenses as expense}
+							{@const category = getCategoryInfo(expense.categoryId)}
+							<a href="/expenses/{expense.id}" class="expense-item">
+								<div class="expense-icon">{category.icon}</div>
+								<div class="expense-details">
+									<span class="expense-description">{expense.description}</span>
+									<span class="expense-meta">{category.name} • {formatRelativeDate(expense.date)}</span>
+								</div>
+								<div class="expense-amount amount-negative">
+									-{formatCurrency(expense.amount, $preferences.currency)}
+								</div>
+							</a>
+						{/each}
+					</div>
+				{/if}
 			</section>
 
 			<!-- Top Categories -->
@@ -101,22 +128,30 @@
 					<a href="/categories" class="view-all">Manage →</a>
 				</div>
 
-				<div class="category-list">
-					{#each topCategories as category}
-						<div class="category-item">
-							<div class="category-info">
-								<span class="category-name">{category.name}</span>
-								<span class="category-amount">${category.amount.toFixed(2)}</span>
+				{#if topCategories.length === 0}
+					<EmptyState
+						title="No spending data"
+						message="Add expenses to see category breakdown"
+						icon="📊"
+					/>
+				{:else}
+					<div class="category-list">
+						{#each topCategories as category}
+							<div class="category-item">
+								<div class="category-info">
+									<span class="category-name">{category.categoryName}</span>
+									<span class="category-amount">{formatCurrency(category.total, $preferences.currency)}</span>
+								</div>
+								<div class="category-bar">
+									<div 
+										class="category-progress" 
+										style="width: {category.percentage}%; background-color: {category.color};"
+									></div>
+								</div>
 							</div>
-							<div class="category-bar">
-								<div 
-									class="category-progress" 
-									style="width: {category.percentage}%; background-color: {category.color};"
-								></div>
-							</div>
-						</div>
-					{/each}
-				</div>
+						{/each}
+					</div>
+				{/if}
 			</section>
 		</div>
 
@@ -191,6 +226,8 @@
 		gap: 1rem;
 		padding: 0.75rem 1.25rem;
 		transition: background-color var(--em-transition-fast);
+		text-decoration: none;
+		color: inherit;
 	}
 
 	.expense-item:hover {

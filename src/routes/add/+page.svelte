@@ -1,38 +1,86 @@
-<script>
+<script lang="ts">
+	import { goto } from '$app/navigation';
 	import { PageHeader } from '$lib/components';
+	import { expenseActions, categories } from '$lib/stores';
+	import type { PaymentMethod, ExpenseFormData } from '$lib/types';
 
 	// Form state
 	let amount = $state('');
 	let description = $state('');
-	let category = $state('');
+	let categoryId = $state('');
 	let date = $state(new Date().toISOString().split('T')[0]);
-	let paymentMethod = $state('card');
+	let paymentMethod = $state<PaymentMethod>('card');
+	let merchant = $state('');
 	let notes = $state('');
 	let tags = $state('');
+	
+	// UI state
+	let isSubmitting = $state(false);
+	let error = $state('');
 
-	const categories = [
-		{ id: 'food', name: 'Food & Dining', icon: '🍔' },
-		{ id: 'transport', name: 'Transport', icon: '🚗' },
-		{ id: 'entertainment', name: 'Entertainment', icon: '🎬' },
-		{ id: 'shopping', name: 'Shopping', icon: '🛍️' },
-		{ id: 'utilities', name: 'Utilities', icon: '💡' },
-		{ id: 'health', name: 'Health', icon: '💊' },
-		{ id: 'education', name: 'Education', icon: '📚' },
-		{ id: 'travel', name: 'Travel', icon: '✈️' },
-		{ id: 'other', name: 'Other', icon: '📋' },
-	];
-
-	const paymentMethods = [
+	const paymentMethods: { id: PaymentMethod; name: string; icon: string }[] = [
 		{ id: 'cash', name: 'Cash', icon: '💵' },
 		{ id: 'card', name: 'Card', icon: '💳' },
 		{ id: 'digital', name: 'Digital Wallet', icon: '📱' },
 		{ id: 'bank', name: 'Bank Transfer', icon: '🏦' },
 	];
 
-	function handleSubmit(e) {
+	function handleSubmit(e: Event) {
 		e.preventDefault();
-		// Will connect to store later
-		alert('Expense saved! (Demo mode - will save to store in Phase 2)');
+		error = '';
+		
+		// Validation
+		if (!amount || parseFloat(amount) <= 0) {
+			error = 'Please enter a valid amount';
+			return;
+		}
+		
+		if (!description.trim()) {
+			error = 'Please enter a description';
+			return;
+		}
+		
+		if (!categoryId) {
+			error = 'Please select a category';
+			return;
+		}
+		
+		isSubmitting = true;
+		
+		try {
+			const formData: ExpenseFormData = {
+				amount,
+				description: description.trim(),
+				categoryId,
+				date,
+				paymentMethod,
+				merchant: merchant.trim() || undefined,
+				notes: notes.trim() || undefined,
+				tags: tags.trim() || undefined
+			};
+			
+			expenseActions.add(formData);
+			
+			// Navigate to expenses page
+			goto('/expenses');
+		} catch (err) {
+			error = 'Failed to save expense. Please try again.';
+			console.error(err);
+		} finally {
+			isSubmitting = false;
+		}
+	}
+
+	function handleReset() {
+		amount = '';
+		description = '';
+		categoryId = '';
+		date = new Date().toISOString().split('T')[0];
+		paymentMethod = 'card';
+		merchant = '';
+		notes = '';
+		tags = '';
+		error = '';
 	}
 </script>
 
@@ -48,6 +96,17 @@
 			subtitle="Record a new expense"
 			showBackButton={true}
 		/>
+
+		{#if error}
+			<div class="error-banner">
+				<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+					<circle cx="12" cy="12" r="10"></circle>
+					<line x1="12" y1="8" x2="12" y2="12"></line>
+					<line x1="12" y1="16" x2="12.01" y2="16"></line>
+				</svg>
+				{error}
+			</div>
+		{/if}
 
 		<form class="expense-form em-card" onsubmit={handleSubmit}>
 			<!-- Amount Field (Prominent) -->
@@ -96,14 +155,16 @@
 
 			<!-- Category Selection -->
 			<div class="form-group">
-				<label class="em-label">Category</label>
-				<div class="category-grid">
-					{#each categories as cat}
+				<label class="em-label" id="category-label">Category</label>
+				<div class="category-grid" role="radiogroup" aria-labelledby="category-label">
+					{#each $categories as cat}
 						<button 
 							type="button"
 							class="category-option"
-							class:selected={category === cat.id}
-							onclick={() => category = cat.id}
+							class:selected={categoryId === cat.id}
+							onclick={() => categoryId = cat.id}
+							role="radio"
+							aria-checked={categoryId === cat.id}
 						>
 							<span class="cat-icon">{cat.icon}</span>
 							<span class="cat-name">{cat.name}</span>
@@ -114,14 +175,16 @@
 
 			<!-- Payment Method -->
 			<div class="form-group">
-				<label class="em-label">Payment Method</label>
-				<div class="payment-methods">
+				<label class="em-label" id="payment-label">Payment Method</label>
+				<div class="payment-methods" role="radiogroup" aria-labelledby="payment-label">
 					{#each paymentMethods as method}
 						<button 
 							type="button"
 							class="payment-option"
 							class:selected={paymentMethod === method.id}
 							onclick={() => paymentMethod = method.id}
+							role="radio"
+							aria-checked={paymentMethod === method.id}
 						>
 							<span class="method-icon">{method.icon}</span>
 							<span class="method-name">{method.name}</span>
@@ -140,6 +203,17 @@
 				</summary>
 				
 				<div class="optional-content">
+					<div class="form-group">
+						<label class="em-label" for="merchant">Merchant</label>
+						<input 
+							type="text" 
+							id="merchant"
+							class="em-input"
+							placeholder="Where did you make this purchase?"
+							bind:value={merchant}
+						/>
+					</div>
+
 					<div class="form-group">
 						<label class="em-label" for="notes">Notes</label>
 						<textarea 
@@ -166,12 +240,20 @@
 
 			<!-- Submit Buttons -->
 			<div class="form-actions">
+				<button type="button" class="em-btn em-btn-ghost" onclick={handleReset}>
+					Clear
+				</button>
 				<a href="/" class="em-btn em-btn-ghost">Cancel</a>
-				<button type="submit" class="em-btn em-btn-primary">
-					<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-						<polyline points="20 6 9 17 4 12"></polyline>
-					</svg>
-					Save Expense
+				<button type="submit" class="em-btn em-btn-primary" disabled={isSubmitting}>
+					{#if isSubmitting}
+						<span class="spinner"></span>
+						Saving...
+					{:else}
+						<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+							<polyline points="20 6 9 17 4 12"></polyline>
+						</svg>
+						Save Expense
+					{/if}
 				</button>
 			</div>
 		</form>
@@ -181,6 +263,19 @@
 <style>
 	.add-expense-page {
 		padding-bottom: 2rem;
+	}
+
+	.error-banner {
+		display: flex;
+		align-items: center;
+		gap: 0.75rem;
+		padding: 1rem;
+		background-color: var(--em-expense-bg);
+		border: 1px solid var(--em-expense);
+		border-radius: var(--em-radius-md);
+		color: var(--em-expense);
+		margin-bottom: 1.5rem;
+		max-width: 600px;
 	}
 
 	.expense-form {
@@ -234,6 +329,7 @@
 	}
 	.amount-input[type=number] {
 		-moz-appearance: textfield;
+		appearance: textfield;
 	}
 
 	.form-grid {
@@ -388,5 +484,18 @@
 
 	.form-actions a {
 		text-decoration: none;
+	}
+
+	.spinner {
+		width: 1em;
+		height: 1em;
+		border: 2px solid transparent;
+		border-top-color: currentColor;
+		border-radius: 50%;
+		animation: spin 0.6s linear infinite;
+	}
+
+	@keyframes spin {
+		to { transform: rotate(360deg); }
 	}
 </style>
