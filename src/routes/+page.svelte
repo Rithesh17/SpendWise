@@ -24,7 +24,7 @@
 	// Get top 5 categories
 	let topCategories = $derived(categoryStats.slice(0, 5));
 	
-	// Budget remaining calculation
+	// Budget remaining calculation - use overall budget progress from store
 	let budgetRemaining = $derived(() => {
 		if ($overallBudgetProgress) {
 			return $overallBudgetProgress.remaining;
@@ -32,11 +32,18 @@
 		return 0;
 	});
 	
-	let budgetPercentage = $derived(() => {
+	let budgetPercentageRemaining = $derived(() => {
 		if ($overallBudgetProgress) {
-			return 100 - $overallBudgetProgress.percentage;
+			return Math.max(0, 100 - $overallBudgetProgress.percentage);
 		}
 		return 100;
+	});
+	
+	let budgetStatus = $derived(() => {
+		if ($overallBudgetProgress) {
+			return $overallBudgetProgress.status;
+		}
+		return 'safe';
 	});
 
 	// Get category info for an expense
@@ -80,8 +87,8 @@
 			<StatCard 
 				title="Budget Left" 
 				value={formatCurrency(budgetRemaining(), $preferences.currency)}
-				subtitle="{Math.round(budgetPercentage())}% remaining"
-				color={budgetPercentage() > 20 ? 'income' : 'warning'}
+				subtitle="{Math.round(budgetPercentageRemaining())}% remaining"
+				color={budgetStatus() === 'danger' ? 'expense' : budgetStatus() === 'warning' ? 'warning' : 'income'}
 			/>
 		</section>
 

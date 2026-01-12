@@ -25,6 +25,9 @@
 		{ id: 'bank', name: 'Bank Transfer', icon: '🏦' },
 	];
 
+	// Get selected category info for display
+	let selectedCategory = $derived($categories.find(c => c.id === categoryId));
+
 	function handleSubmit(e: Event) {
 		e.preventDefault();
 		error = '';
@@ -108,7 +111,7 @@
 			</div>
 		{/if}
 
-		<form class="expense-form em-card" onsubmit={handleSubmit}>
+		<form class="expense-form" onsubmit={handleSubmit}>
 			<!-- Amount Field (Prominent) -->
 			<div class="amount-section">
 				<label class="em-label" for="amount">Amount</label>
@@ -143,33 +146,33 @@
 
 				<div class="form-group">
 					<label class="em-label" for="date">Date</label>
-					<input 
-						type="date" 
-						id="date"
-						class="em-input"
-						bind:value={date}
-						required
-					/>
+					<div class="date-input-wrapper">
+						<input 
+							type="date" 
+							id="date"
+							class="em-input date-input"
+							bind:value={date}
+							required
+						/>
+					</div>
 				</div>
 			</div>
 
-			<!-- Category Selection -->
+			<!-- Category Dropdown -->
 			<div class="form-group">
-				<label class="em-label" id="category-label">Category</label>
-				<div class="category-grid" role="radiogroup" aria-labelledby="category-label">
-					{#each $categories as cat}
-						<button 
-							type="button"
-							class="category-option"
-							class:selected={categoryId === cat.id}
-							onclick={() => categoryId = cat.id}
-							role="radio"
-							aria-checked={categoryId === cat.id}
-						>
-							<span class="cat-icon">{cat.icon}</span>
-							<span class="cat-name">{cat.name}</span>
-						</button>
-					{/each}
+				<label class="em-label" for="category">Category</label>
+				<div class="select-wrapper">
+					<select id="category" class="em-input category-select" bind:value={categoryId} required>
+						<option value="">Select a category...</option>
+						{#each $categories as cat}
+							<option value={cat.id}>{cat.icon} {cat.name}</option>
+						{/each}
+					</select>
+					<span class="select-icon">
+						<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+							<polyline points="6 9 12 15 18 9"></polyline>
+						</svg>
+					</span>
 				</div>
 			</div>
 
@@ -243,7 +246,7 @@
 				<button type="button" class="em-btn em-btn-ghost" onclick={handleReset}>
 					Clear
 				</button>
-				<a href="/" class="em-btn em-btn-ghost">Cancel</a>
+				<a href="/" class="em-btn em-btn-ghost cancel-link">Cancel</a>
 				<button type="submit" class="em-btn em-btn-primary" disabled={isSubmitting}>
 					{#if isSubmitting}
 						<span class="spinner"></span>
@@ -281,6 +284,9 @@
 	.expense-form {
 		max-width: 600px;
 		padding: 1.5rem;
+		background-color: var(--em-surface);
+		border: 1px solid var(--em-border);
+		border-radius: var(--em-radius-lg);
 	}
 
 	.amount-section {
@@ -349,48 +355,43 @@
 		margin-bottom: 1.5rem;
 	}
 
-	/* Category Grid */
-	.category-grid {
-		display: grid;
-		grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
-		gap: 0.75rem;
+	/* Date input wrapper */
+	.date-input-wrapper {
+		position: relative;
 	}
 
-	.category-option {
-		display: flex;
-		flex-direction: column;
-		align-items: center;
-		gap: 0.5rem;
-		padding: 1rem 0.75rem;
-		background-color: var(--em-bg-tertiary);
-		border: 2px solid transparent;
-		border-radius: var(--em-radius-md);
+	.date-input {
 		cursor: pointer;
-		transition: all var(--em-transition-fast);
 	}
 
-	.category-option:hover {
-		background-color: var(--em-bg-hover);
+	.date-input::-webkit-calendar-picker-indicator {
+		cursor: pointer;
+		opacity: 0.6;
+		transition: opacity 0.2s;
 	}
 
-	.category-option.selected {
-		border-color: var(--em-primary);
-		background-color: var(--em-info-bg);
+	.date-input::-webkit-calendar-picker-indicator:hover {
+		opacity: 1;
 	}
 
-	.cat-icon {
-		font-size: 1.5rem;
+	/* Category Dropdown */
+	.select-wrapper {
+		position: relative;
 	}
 
-	.cat-name {
-		font-size: 0.75rem;
-		font-weight: 500;
-		color: var(--em-text-secondary);
-		text-align: center;
+	.category-select {
+		appearance: none;
+		padding-right: 2.5rem;
+		cursor: pointer;
 	}
 
-	.category-option.selected .cat-name {
-		color: var(--em-text-primary);
+	.select-icon {
+		position: absolute;
+		right: 1rem;
+		top: 50%;
+		transform: translateY(-50%);
+		color: var(--em-text-muted);
+		pointer-events: none;
 	}
 
 	/* Payment Methods */
@@ -482,7 +483,7 @@
 		border-top: 1px solid var(--em-border);
 	}
 
-	.form-actions a {
+	.cancel-link {
 		text-decoration: none;
 	}
 

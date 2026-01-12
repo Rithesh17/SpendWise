@@ -83,23 +83,35 @@
   --em-transition-slow: 300ms ease;
 }
 
-/* Light theme overrides (for future use) */
-@media (prefers-color-scheme: light) {
-  :root.light-mode {
-    --em-bg-primary: #F8FAFC;
-    --em-bg-secondary: #F1F5F9;
-    --em-bg-tertiary: #E2E8F0;
-    --em-bg-hover: #CBD5E1;
-    --em-surface: #FFFFFF;
-    --em-surface-hover: #F1F5F9;
-    --em-surface-border: #E2E8F0;
-    --em-text-primary: #0F172A;
-    --em-text-secondary: #475569;
-    --em-text-muted: #94A3B8;
-    --em-text-inverse: #F8FAFC;
-    --em-border: #E2E8F0;
-    --em-border-light: #CBD5E1;
-  }
+/* Light theme overrides */
+:root.light-mode {
+  color-scheme: light;
+  
+  --em-bg-primary: #F8FAFC;
+  --em-bg-secondary: #F1F5F9;
+  --em-bg-tertiary: #E2E8F0;
+  --em-bg-hover: #CBD5E1;
+  --em-surface: #FFFFFF;
+  --em-surface-hover: #F1F5F9;
+  --em-surface-border: #E2E8F0;
+  --em-text-primary: #0F172A;
+  --em-text-secondary: #475569;
+  --em-text-muted: #64748B;
+  --em-text-inverse: #F8FAFC;
+  --em-border: #E2E8F0;
+  --em-border-light: #CBD5E1;
+  
+  /* Shadows for light mode */
+  --em-shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  --em-shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1);
+  --em-shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -4px rgba(0, 0, 0, 0.1);
+  
+  /* Override statue-ssg theme variables for light mode */
+  --color-background: #F8FAFC;
+  --color-surface: #FFFFFF;
+  --color-text: #0F172A;
+  --color-text-secondary: #475569;
+  --color-border: #E2E8F0;
 }
 
 /* ===== Base Styles ===== */
@@ -107,6 +119,28 @@
 body {
   background-color: var(--em-bg-primary);
   color: var(--em-text-primary);
+  transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+/* Override statue-ssg navbar for light mode */
+:root.light-mode :global(nav) {
+  background-color: var(--em-surface) !important;
+  border-bottom: 1px solid var(--em-border) !important;
+}
+
+:root.light-mode :global(nav a),
+:root.light-mode :global(nav button) {
+  color: var(--em-text-secondary) !important;
+}
+
+:root.light-mode :global(nav a:hover),
+:root.light-mode :global(nav button:hover) {
+  color: var(--em-text-primary) !important;
+}
+
+:root.light-mode :global(footer) {
+  background-color: var(--em-surface) !important;
+  border-top: 1px solid var(--em-border) !important;
 }
 
 /* ===== Utility Classes ===== */

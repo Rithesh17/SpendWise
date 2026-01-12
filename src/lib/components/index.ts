@@ -18,3 +18,6 @@ export { default as Toast } from './Toast.svelte';
 
 // Icons
 export { default as Icon } from './Icon.svelte';
+
+// User Menu
+export { default as UserMenu } from './UserMenu.svelte';

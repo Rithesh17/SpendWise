@@ -117,13 +117,23 @@ function applyTheme(theme: Theme): void {
   if (!browser) return;
   
   const root = document.documentElement;
+  const body = document.body;
+  
+  let isLight = false;
   
   if (theme === 'system') {
     const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-    root.classList.toggle('light-mode', !prefersDark);
+    isLight = !prefersDark;
   } else {
-    root.classList.toggle('light-mode', theme === 'light');
+    isLight = theme === 'light';
   }
+  
+  // Apply to both html and body for maximum compatibility
+  root.classList.toggle('light-mode', isLight);
+  body.classList.toggle('light-mode', isLight);
+  
+  // Also update color-scheme for native elements
+  root.style.colorScheme = isLight ? 'light' : 'dark';
 }
 
 /**

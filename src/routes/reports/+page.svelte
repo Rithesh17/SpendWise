@@ -1,35 +1,78 @@
-<script>
+<script lang="ts">
 	import { PageHeader, StatCard } from '$lib/components';
+	import { 
+		expenses,
+		todayExpenses,
+		weekExpenses, 
+		monthExpenses,
+		todayStats,
+		weekStats,
+		monthStats,
+		categories
+	} from '$lib/stores';
+	import { preferences } from '$lib/stores/preferences';
+	import { formatCurrency, calculateCategoryStats, calculateStats, startOfYear, filterByDateRange } from '$lib/utils';
+	import { downloadAsCSV } from '$lib/utils/storage';
 
-	// Demo data - will be replaced with store data later
-	/** @type {'month' | 'week' | 'year'} */
-	let selectedPeriod = $state('month');
+	type Period = 'week' | 'month' | 'year';
+	let selectedPeriod = $state<Period>('month');
 
-	const periodStats = {
-		month: { total: 1247.35, average: 41.58, count: 30, highest: 124.00 },
-		week: { total: 234.80, average: 33.54, count: 7, highest: 67.30 },
-		year: { total: 14968.20, average: 1247.35, count: 365, highest: 450.00 }
-	};
+	// Calculate year stats
+	let yearExpenses = $derived(filterByDateRange($expenses, startOfYear(), new Date()));
+	let yearStats = $derived(calculateStats(yearExpenses));
 
-	const categoryBreakdown = [
-		{ name: 'Food & Dining', amount: 450.25, percentage: 36, color: '#F97316' },
-		{ name: 'Transport', amount: 285.50, percentage: 23, color: '#3B82F6' },
-		{ name: 'Entertainment', amount: 198.00, percentage: 16, color: '#8B5CF6' },
-		{ name: 'Utilities', amount: 180.00, percentage: 14, color: '#14B8A6' },
-		{ name: 'Other', amount: 133.60, percentage: 11, color: '#64748B' },
-	];
+	// Get stats based on selected period
+	let currentStats = $derived(() => {
+		switch (selectedPeriod) {
+			case 'week': return $weekStats;
+			case 'year': return yearStats;
+			default: return $monthStats;
+		}
+	});
 
-	const monthlyTrend = [
-		{ month: 'Aug', amount: 1450 },
-		{ month: 'Sep', amount: 1280 },
-		{ month: 'Oct', amount: 1520 },
-		{ month: 'Nov', amount: 1180 },
-		{ month: 'Dec', amount: 1650 },
-		{ month: 'Jan', amount: 1247 },
-	];
+	let currentExpenses = $derived(() => {
+		switch (selectedPeriod) {
+			case 'week': return $weekExpenses;
+			case 'year': return yearExpenses;
+			default: return $monthExpenses;
+		}
+	});
 
-	let stats = $derived(periodStats[selectedPeriod]);
-	let maxTrend = $derived(Math.max(...monthlyTrend.map(m => m.amount)));
+	// Category breakdown for selected period
+	let categoryStats = $derived(calculateCategoryStats(currentExpenses(), $categories));
+
+	// Monthly trend (last 6 months)
+	let monthlyTrend = $derived(() => {
+		const months: { month: string; amount: number }[] = [];
+		const now = new Date();
+		
+		for (let i = 5; i >= 0; i--) {
+			const date = new Date(now.getFullYear(), now.getMonth() - i, 1);
+			const monthStart = new Date(date.getFullYear(), date.getMonth(), 1);
+			const monthEnd = new Date(date.getFullYear(), date.getMonth() + 1, 0);
+			
+			const monthExpenses = filterByDateRange($expenses, monthStart, monthEnd);
+			const total = monthExpenses.reduce((sum, e) => sum + e.amount, 0);
+			
+			months.push({
+				month: date.toLocaleString('default', { month: 'short' }),
+				amount: total
+			});
+		}
+		
+		return months;
+	});
+
+	let maxTrend = $derived(Math.max(...monthlyTrend().map(m => m.amount), 1));
+
+	function handleExportCSV() {
+		const date = new Date().toISOString().split('T')[0];
+		downloadAsCSV(`expenses-${date}.csv`);
+	}
+
+	function handleExportPDF() {
+		alert('PDF export will be available in a future update.');
+	}
 </script>
 
 <svelte:head>
@@ -67,20 +110,20 @@
 		<section class="stats-grid">
 			<StatCard 
 				title="Total Spent" 
-				value="${stats.total.toFixed(2)}"
+				value={formatCurrency(currentStats().total, $preferences.currency)}
 				color="expense"
 			/>
 			<StatCard 
-				title="Daily Average" 
-				value="${stats.average.toFixed(2)}"
+				title="Average" 
+				value={formatCurrency(currentStats().average, $preferences.currency)}
 			/>
 			<StatCard 
 				title="Transactions" 
-				value={stats.count.toString()}
+				value={currentStats().count.toString()}
 			/>
 			<StatCard 
-				title="Largest Expense" 
-				value="${stats.highest.toFixed(2)}"
+				title="Largest" 
+				value={formatCurrency(currentStats().highest, $preferences.currency)}
 				color="warning"
 			/>
 		</section>
@@ -95,8 +138,8 @@
 				<div class="donut-chart">
 					<div class="donut-visual">
 						<svg viewBox="0 0 36 36" class="donut-svg">
-							{#each categoryBreakdown as cat, i}
-								{@const offset = categoryBreakdown.slice(0, i).reduce((sum, c) => sum + c.percentage, 0)}
+							{#each categoryStats as cat, i}
+								{@const offset = categoryStats.slice(0, i).reduce((sum, c) => sum + c.percentage, 0)}
 								<circle
 									class="donut-segment"
 									stroke={cat.color}
@@ -107,21 +150,24 @@
 							{/each}
 						</svg>
 						<div class="donut-center">
-							<span class="donut-total">${periodStats[selectedPeriod].total.toFixed(0)}</span>
+							<span class="donut-total">{formatCurrency(currentStats().total, $preferences.currency)}</span>
 							<span class="donut-label">Total</span>
 						</div>
 					</div>
 				</div>
 
 				<div class="category-legend">
-					{#each categoryBreakdown as cat}
+					{#each categoryStats as cat}
 						<div class="legend-item">
 							<span class="legend-color" style="background-color: {cat.color};"></span>
-							<span class="legend-name">{cat.name}</span>
-							<span class="legend-value">${cat.amount.toFixed(2)}</span>
-							<span class="legend-percentage">{cat.percentage}%</span>
+							<span class="legend-name">{cat.categoryName}</span>
+							<span class="legend-value">{formatCurrency(cat.total, $preferences.currency)}</span>
+							<span class="legend-percentage">{Math.round(cat.percentage)}%</span>
 						</div>
 					{/each}
+					{#if categoryStats.length === 0}
+						<p class="no-data">No expenses in this period</p>
+					{/if}
 				</div>
 			</section>
 
@@ -130,7 +176,7 @@
 				<h2 class="chart-title">Monthly Trend</h2>
 				
 				<div class="bar-chart">
-					{#each monthlyTrend as month}
+					{#each monthlyTrend() as month}
 						<div class="bar-item">
 							<div class="bar-container">
 								<div 
@@ -139,7 +185,7 @@
 								></div>
 							</div>
 							<span class="bar-label">{month.month}</span>
-							<span class="bar-value">${month.amount}</span>
+							<span class="bar-value">{formatCurrency(month.amount, $preferences.currency)}</span>
 						</div>
 					{/each}
 				</div>
@@ -153,7 +199,7 @@
 				<p class="export-description">Download your expense data for the selected period.</p>
 			</div>
 			<div class="export-actions">
-				<button class="em-btn em-btn-ghost">
+				<button class="export-btn export-csv" onclick={handleExportCSV}>
 					<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
 						<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
 						<polyline points="14 2 14 8 20 8"></polyline>
@@ -163,7 +209,7 @@
 					</svg>
 					Export CSV
 				</button>
-				<button class="em-btn em-btn-primary">
+				<button class="export-btn export-pdf" onclick={handleExportPDF}>
 					<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
 						<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
 						<polyline points="14 2 14 8 20 8"></polyline>
@@ -273,7 +319,7 @@
 
 	.donut-total {
 		display: block;
-		font-size: 1.5rem;
+		font-size: 1.25rem;
 		font-weight: 700;
 		color: var(--em-text-primary);
 	}
@@ -322,6 +368,13 @@
 		text-align: right;
 	}
 
+	.no-data {
+		text-align: center;
+		color: var(--em-text-muted);
+		font-size: 0.875rem;
+		padding: 1rem;
+	}
+
 	/* Bar Chart */
 	.bar-chart {
 		display: flex;
@@ -355,6 +408,7 @@
 		background: linear-gradient(to top, var(--em-primary), var(--em-primary-light));
 		border-radius: var(--em-radius-sm) var(--em-radius-sm) 0 0;
 		transition: height 0.5s ease;
+		min-height: 2px;
 	}
 
 	.bar-label {
@@ -364,7 +418,7 @@
 	}
 
 	.bar-value {
-		font-size: 0.75rem;
+		font-size: 0.625rem;
 		color: var(--em-text-secondary);
 		font-weight: 500;
 	}
@@ -394,6 +448,38 @@
 	.export-actions {
 		display: flex;
 		gap: 0.75rem;
+	}
+
+	.export-btn {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		padding: 0.75rem 1.25rem;
+		border-radius: var(--em-radius-md);
+		font-weight: 500;
+		cursor: pointer;
+		transition: all var(--em-transition-fast);
+	}
+
+	.export-csv {
+		background-color: var(--em-surface-hover);
+		border: 1px solid var(--em-border);
+		color: var(--em-text-primary);
+	}
+
+	.export-csv:hover {
+		background-color: var(--em-bg-hover);
+		border-color: var(--em-primary);
+	}
+
+	.export-pdf {
+		background-color: var(--em-primary);
+		border: 1px solid var(--em-primary);
+		color: white;
+	}
+
+	.export-pdf:hover {
+		background-color: var(--em-primary-hover);
 	}
 
 	@media (max-width: 600px) {

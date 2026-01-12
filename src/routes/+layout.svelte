@@ -1,10 +1,10 @@
-<script>
+<script lang="ts">
 	import { NavigationBar, Footer } from 'statue-ssg';
 	import { page } from '$app/stores';
 	import { onNavigate } from '$app/navigation';
 	import { onMount } from 'svelte';
 	import '$lib/index.css';
-	import { BottomNav } from '$lib/components';
+	import { BottomNav, UserMenu } from '$lib/components';
 	import { initializeStores } from '$lib/stores/app';
 	import { shouldLoadDemoData, loadDemoData } from '$lib/stores/seed-data';
 
@@ -24,6 +24,19 @@
 		initializeStores();
 	});
 
+	// Close mobile menu on route change
+	$effect(() => {
+		// Watch for route changes
+		$page.url.pathname;
+		
+		// Try to close any open mobile menu by clicking outside
+		// This is a workaround for statue-ssg NavigationBar
+		const mobileMenuButton = document.querySelector('nav button[aria-label*="menu"], nav button[aria-expanded="true"]');
+		if (mobileMenuButton && (mobileMenuButton as HTMLButtonElement).getAttribute('aria-expanded') === 'true') {
+			(mobileMenuButton as HTMLButtonElement).click();
+		}
+	});
+
 	// Enable View Transitions API for smooth page transitions
 	onNavigate((navigation) => {
 		if (!document.startViewTransition) return;
@@ -37,15 +50,19 @@
 	});
 </script>
 
-<NavigationBar
-	navbarItems={data.globalDirectories}
-	showSearch={data.searchConfig?.enabled ?? false}
-	searchPlaceholder={data.searchConfig?.placeholder ?? 'Search expenses...'}
-	siteTitle={navbarConfig?.siteTitle ?? null}
-	logo={navbarConfig?.logo ?? null}
-	hiddenFromNav={navbarConfig?.hiddenFromNav ?? []}
-	{...(navbarConfig?.defaultNavItems && { defaultNavItems: navbarConfig.defaultNavItems })}
-/>
+<div class="navbar-wrapper">
+	<NavigationBar
+		navbarItems={data.globalDirectories}
+		showSearch={false}
+		siteTitle={navbarConfig?.siteTitle ?? null}
+		logo={navbarConfig?.logo ?? null}
+		hiddenFromNav={navbarConfig?.hiddenFromNav ?? []}
+		{...(navbarConfig?.defaultNavItems && { defaultNavItems: navbarConfig.defaultNavItems })}
+	/>
+	<div class="user-menu-wrapper">
+		<UserMenu />
+	</div>
+</div>
 
 <main class="app-main">
 	{@render children()}
@@ -55,6 +72,33 @@
 <BottomNav />
 
 <style>
+	.navbar-wrapper {
+		position: fixed;
+		top: 0;
+		left: 0;
+		right: 0;
+		z-index: 100;
+		display: flex;
+		align-items: center;
+	}
+
+	.navbar-wrapper :global(nav) {
+		flex: 1;
+	}
+
+	.user-menu-wrapper {
+		position: absolute;
+		right: 1rem;
+		top: 50%;
+		transform: translateY(-50%);
+	}
+
+	@media (max-width: 768px) {
+		.user-menu-wrapper {
+			display: none;
+		}
+	}
+
 	:global(body) {
 		background-color: var(--em-bg-primary);
 		font-family:
@@ -71,6 +115,7 @@
 
 	.app-main {
 		min-height: calc(100vh - 200px);
+		padding-top: 80px; /* Space below navbar */
 		padding-bottom: 5rem; /* Space for bottom nav on mobile */
 	}
 
@@ -103,6 +148,11 @@
 	:global(::view-transition-old(navbar)),
 	:global(::view-transition-new(navbar)) {
 		animation: none;
+	}
+
+	/* Hide Home link in footer */
+	:global(footer a[href="/"]) {
+		display: none !important;
 	}
 
 	:global(::view-transition-group(*)) {
