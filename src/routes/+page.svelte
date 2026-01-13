@@ -9,8 +9,7 @@
 		weekStats,
 		monthStats,
 		categories,
-		overallBudgetProgress,
-		categoryBudgetProgress
+		overallBudgetProgress
 	} from '$lib/stores';
 	import { 
 		formatCurrency, 
@@ -19,7 +18,11 @@
 		getDailySpending,
 		getSpendingTrend,
 		getBiggestExpense,
-		getMostFrequentCategory
+		getMostFrequentCategory,
+		startOfWeek,
+		startOfMonth,
+		startOfYear,
+		filterByDateRange
 	} from '$lib/utils';
 	import { preferences } from '$lib/stores/preferences';
 	
@@ -55,8 +58,91 @@
 		color: cat.color
 	})));
 	
-	// Daily spending for bar chart (last 7 days)
-	let dailySpending = $derived(getDailySpending($expenses, 7));
+	// Period-based bar chart data
+	let periodChartData = $derived(() => {
+		const now = new Date();
+		
+		switch (selectedPeriod) {
+			case 'week': {
+				// Show expenses by days of this week
+				const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+				const weekStart = startOfWeek();
+				const result: Array<{label: string, value: number}> = [];
+				
+				for (let i = 0; i < 7; i++) {
+					const date = new Date(weekStart);
+					date.setDate(date.getDate() + i);
+					const dateStr = date.toISOString().split('T')[0];
+					
+					const dayExpenses = $expenses.filter(e => e.date.startsWith(dateStr));
+					const total = dayExpenses.reduce((sum, e) => sum + e.amount, 0);
+					
+					result.push({
+						label: days[date.getDay()],
+						value: total
+					});
+				}
+				return result;
+			}
+			case 'year': {
+				// Show expenses by months of this year
+				const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+				const result: Array<{label: string, value: number}> = [];
+				
+				for (let i = 0; i <= now.getMonth(); i++) {
+					const monthStart = new Date(now.getFullYear(), i, 1);
+					const monthEnd = new Date(now.getFullYear(), i + 1, 0);
+					
+					const monthExpenses = filterByDateRange($expenses, monthStart, monthEnd);
+					const total = monthExpenses.reduce((sum, e) => sum + e.amount, 0);
+					
+					result.push({
+						label: months[i],
+						value: total
+					});
+				}
+				return result;
+			}
+			default: {
+				// Month: show expenses by weeks in this month
+				const monthStart = startOfMonth();
+				const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+				const result: Array<{label: string, value: number}> = [];
+				
+				let weekNum = 1;
+				let weekStart = new Date(monthStart);
+				
+				while (weekStart <= monthEnd) {
+					const weekEnd = new Date(weekStart);
+					weekEnd.setDate(weekEnd.getDate() + 6);
+					
+					const actualEnd = weekEnd > monthEnd ? monthEnd : weekEnd;
+					
+					const weekExpenses = filterByDateRange($expenses, weekStart, actualEnd);
+					const total = weekExpenses.reduce((sum, e) => sum + e.amount, 0);
+					
+					result.push({
+						label: `Week ${weekNum}`,
+						value: total
+					});
+					
+					weekStart = new Date(weekEnd);
+					weekStart.setDate(weekStart.getDate() + 1);
+					weekNum++;
+				}
+				return result;
+			}
+		}
+	});
+	
+	// Chart title based on period
+	let chartTitle = $derived(() => {
+		switch (selectedPeriod) {
+			case 'week': return 'This Week by Day';
+			case 'year': return 'This Year by Month';
+			default: return 'This Month by Week';
+		}
+	});
 	
 	// Spending trend for sparkline (last 14 days)
 	let spendingTrend = $derived(getSpendingTrend($expenses, 14));
@@ -205,10 +291,10 @@
 				</div>
 			</div>
 
-			<!-- Daily Spending -->
+			<!-- Period-based Spending Chart -->
 			<div class="chart-card em-card">
 				<div class="section-header">
-					<h2 class="section-title">Last 7 Days</h2>
+					<h2 class="section-title">{chartTitle()}</h2>
 					<div class="trend-indicator">
 						<SparkLine 
 							data={spendingTrend}
@@ -220,7 +306,7 @@
 				</div>
 				<div class="chart-content bar-chart-content">
 					<BarChart 
-						data={dailySpending}
+						data={periodChartData()}
 						height={160}
 						barColor="var(--em-primary)"
 						formatValue={(v) => v > 0 ? formatCurrency(v, $preferences.currency) : ''}
@@ -261,7 +347,7 @@
 					<span class="stat-label">Daily Average</span>
 					<span class="stat-main">
 						{formatCurrency(
-							dailySpending.reduce((sum, d) => sum + d.value, 0) / 7, 
+							getDailySpending($expenses, 7).reduce((sum, d) => sum + d.value, 0) / 7, 
 							$preferences.currency
 						)}
 					</span>
@@ -269,36 +355,6 @@
 				</div>
 			</div>
 		</section>
-
-		<!-- Budget Progress (if budgets exist) -->
-		{#if $categoryBudgetProgress && $categoryBudgetProgress.length > 0}
-			<section class="budget-section em-card">
-				<div class="section-header">
-					<h2 class="section-title">Budget Progress</h2>
-					<a href="/budgets" class="view-all">Manage →</a>
-				</div>
-				<div class="budget-list">
-					{#each $categoryBudgetProgress.slice(0, 4) as progress}
-						{@const category = $categories.find(c => c.id === progress.budget.categoryId)}
-						<div class="budget-item">
-							<div class="budget-header">
-								<span class="budget-icon">{category?.icon || '📋'}</span>
-								<span class="budget-name">{category?.name || 'Unknown'}</span>
-								<span class="budget-amounts">
-									{formatCurrency(progress.spent, $preferences.currency)} / {formatCurrency(progress.budget.amount, $preferences.currency)}
-								</span>
-							</div>
-							<div class="budget-bar">
-								<div 
-									class="budget-fill {progress.status}"
-									style="width: {progress.percentage}%;"
-								></div>
-							</div>
-						</div>
-					{/each}
-				</div>
-			</section>
-		{/if}
 
 		<!-- Main Content Grid -->
 		<div class="content-grid">
@@ -526,74 +582,6 @@
 		white-space: nowrap;
 		overflow: hidden;
 		text-overflow: ellipsis;
-	}
-
-	/* Budget Section */
-	.budget-section {
-		margin-bottom: 1.5rem;
-		padding: 0;
-	}
-
-	.budget-list {
-		padding: 1rem 1.25rem;
-		display: flex;
-		flex-direction: column;
-		gap: 1rem;
-	}
-
-	.budget-item {
-		display: flex;
-		flex-direction: column;
-		gap: 0.5rem;
-	}
-
-	.budget-header {
-		display: flex;
-		align-items: center;
-		gap: 0.5rem;
-	}
-
-	.budget-icon {
-		font-size: 1rem;
-	}
-
-	.budget-name {
-		flex: 1;
-		font-size: 0.875rem;
-		font-weight: 500;
-		color: var(--em-text-primary);
-	}
-
-	.budget-amounts {
-		font-size: 0.75rem;
-		color: var(--em-text-muted);
-		font-variant-numeric: tabular-nums;
-	}
-
-	.budget-bar {
-		width: 100%;
-		height: 6px;
-		background-color: var(--em-bg-tertiary);
-		border-radius: var(--em-radius-full);
-		overflow: hidden;
-	}
-
-	.budget-fill {
-		height: 100%;
-		border-radius: var(--em-radius-full);
-		transition: width 0.5s ease-out;
-	}
-
-	.budget-fill.safe {
-		background-color: var(--em-income);
-	}
-
-	.budget-fill.warning {
-		background-color: var(--em-warning);
-	}
-
-	.budget-fill.danger {
-		background-color: var(--em-expense);
 	}
 
 	/* Content Grid */

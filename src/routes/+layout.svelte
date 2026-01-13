@@ -59,7 +59,7 @@
 		hiddenFromNav={navbarConfig?.hiddenFromNav ?? []}
 		{...(navbarConfig?.defaultNavItems && { defaultNavItems: navbarConfig.defaultNavItems })}
 	/>
-	<div class="user-menu-wrapper">
+	<div class="user-menu-container">
 		<UserMenu />
 	</div>
 </div>
@@ -86,16 +86,23 @@
 		flex: 1;
 	}
 
-	.user-menu-wrapper {
+	.user-menu-container {
 		position: absolute;
 		right: 1rem;
 		top: 50%;
 		transform: translateY(-50%);
+		z-index: 101;
 	}
 
 	@media (max-width: 768px) {
-		.user-menu-wrapper {
-			display: none;
+		.user-menu-container {
+			right: 4rem; /* Move left to avoid hamburger menu */
+		}
+	}
+
+	@media (max-width: 480px) {
+		.user-menu-container {
+			display: none; /* Hide on very small screens */
 		}
 	}
 

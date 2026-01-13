@@ -17,14 +17,15 @@
 		startOfMonth,
 		startOfWeek,
 		filterByDateRange,
-		getDailySpending,
 		getMonthlySpending
 	} from '$lib/utils';
 	import { downloadAsCSV } from '$lib/utils/storage';
-	import type { Expense } from '$lib/types';
 
 	type Period = 'week' | 'month' | 'year';
 	let selectedPeriod = $state<Period>('month');
+	
+	// Heatmap month selector
+	let heatmapMonth = $state(new Date());
 
 	// Calculate period expenses
 	let yearExpenses = $derived(filterByDateRange($expenses, startOfYear(), new Date()));
@@ -94,7 +95,7 @@
 	// Monthly trend (last 6 months)
 	let monthlyTrend = $derived(getMonthlySpending($expenses, 6));
 
-	// Daily spending for heatmap
+	// Daily spending for heatmap (for selected month)
 	let dailySpendingMap = $derived(() => {
 		const map = new Map<string, number>();
 		$expenses.forEach(exp => {
@@ -179,6 +180,29 @@
 		month: { current: 'This Month', previous: 'Last Month' },
 		year: { current: 'This Year', previous: 'Last Year' }
 	};
+
+	// Heatmap month navigation
+	function prevMonth() {
+		heatmapMonth = new Date(heatmapMonth.getFullYear(), heatmapMonth.getMonth() - 1, 1);
+	}
+
+	function nextMonth() {
+		const now = new Date();
+		const next = new Date(heatmapMonth.getFullYear(), heatmapMonth.getMonth() + 1, 1);
+		if (next <= now) {
+			heatmapMonth = next;
+		}
+	}
+
+	let canGoNext = $derived(() => {
+		const now = new Date();
+		const next = new Date(heatmapMonth.getFullYear(), heatmapMonth.getMonth() + 1, 1);
+		return next <= now;
+	});
+
+	let heatmapMonthLabel = $derived(
+		heatmapMonth.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
+	);
 
 	function handleExportCSV() {
 		const date = new Date().toISOString().split('T')[0];
@@ -320,19 +344,35 @@
 			</section>
 		</div>
 
-		<!-- Spending Heatmap -->
-		<section class="chart-card em-card full-width">
-			<h2 class="chart-title">Daily Spending</h2>
-			<div class="heatmap-wrapper">
-				<SpendingHeatmap 
-					data={dailySpendingMap()}
-					month={new Date()}
-				/>
-			</div>
-		</section>
+		<!-- Heatmap and Day of Week Row -->
+		<div class="charts-grid two-col">
+			<!-- Spending Heatmap with Month Selector -->
+			<section class="chart-card em-card">
+				<div class="chart-header-with-nav">
+					<h2 class="chart-title">Daily Spending</h2>
+					<div class="month-nav print-hide">
+						<button class="month-nav-btn" onclick={prevMonth} aria-label="Previous month">
+							←
+						</button>
+						<span class="month-label">{heatmapMonthLabel}</span>
+						<button 
+							class="month-nav-btn" 
+							onclick={nextMonth} 
+							aria-label="Next month"
+							disabled={!canGoNext()}
+						>
+							→
+						</button>
+					</div>
+				</div>
+				<div class="heatmap-wrapper">
+					<SpendingHeatmap 
+						data={dailySpendingMap()}
+						month={heatmapMonth}
+					/>
+				</div>
+			</section>
 
-		<!-- Charts Row 2 -->
-		<div class="charts-grid">
 			<!-- Day of Week -->
 			<section class="chart-card em-card">
 				<h2 class="chart-title">Spending by Day of Week</h2>
@@ -353,39 +393,39 @@
 					{/each}
 				</div>
 			</section>
-
-			<!-- Payment Methods -->
-			<section class="chart-card em-card">
-				<h2 class="chart-title">Payment Methods</h2>
-				
-				{#if paymentMethodData().length === 0}
-					<EmptyState
-						title="No data"
-						message="No payment data available"
-						icon="💳"
-					/>
-				{:else}
-					<div class="payment-list">
-						{#each paymentMethodData() as method}
-							{@const maxPayment = Math.max(...paymentMethodData().map(m => m.total), 1)}
-							<div class="payment-item">
-								<div class="payment-header">
-									<span class="payment-label">{method.label}</span>
-									<span class="payment-amount">{formatCurrency(method.total, $preferences.currency)}</span>
-								</div>
-								<div class="payment-bar-wrapper">
-									<div 
-										class="payment-bar-fill"
-										style="width: {(method.total / maxPayment) * 100}%;"
-									></div>
-								</div>
-								<span class="payment-count">{method.count} transaction{method.count !== 1 ? 's' : ''}</span>
-							</div>
-						{/each}
-					</div>
-				{/if}
-			</section>
 		</div>
+
+		<!-- Payment Methods -->
+		<section class="chart-card em-card full-width">
+			<h2 class="chart-title">Payment Methods</h2>
+			
+			{#if paymentMethodData().length === 0}
+				<EmptyState
+					title="No data"
+					message="No payment data available"
+					icon="💳"
+				/>
+			{:else}
+				<div class="payment-grid">
+					{#each paymentMethodData() as method}
+						{@const maxPayment = Math.max(...paymentMethodData().map(m => m.total), 1)}
+						<div class="payment-item">
+							<div class="payment-header">
+								<span class="payment-label">{method.label}</span>
+								<span class="payment-amount">{formatCurrency(method.total, $preferences.currency)}</span>
+							</div>
+							<div class="payment-bar-wrapper">
+								<div 
+									class="payment-bar-fill"
+									style="width: {(method.total / maxPayment) * 100}%;"
+								></div>
+							</div>
+							<span class="payment-count">{method.count} transaction{method.count !== 1 ? 's' : ''}</span>
+						</div>
+					{/each}
+				</div>
+			{/if}
+		</section>
 
 		<!-- Top Merchants -->
 		{#if topMerchants().length > 0 && topMerchants()[0].name !== 'Unknown'}
@@ -614,6 +654,16 @@
 		margin-bottom: 1.5rem;
 	}
 
+	.charts-grid.two-col {
+		grid-template-columns: 1fr 1fr;
+	}
+
+	@media (max-width: 900px) {
+		.charts-grid.two-col {
+			grid-template-columns: 1fr;
+		}
+	}
+
 	.chart-card {
 		padding: 1.5rem;
 	}
@@ -628,6 +678,52 @@
 		margin: 0 0 1.5rem;
 	}
 
+	.chart-header-with-nav {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		margin-bottom: 1rem;
+	}
+
+	.chart-header-with-nav .chart-title {
+		margin: 0;
+	}
+
+	.month-nav {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+	}
+
+	.month-nav-btn {
+		padding: 0.375rem 0.75rem;
+		background-color: var(--em-surface);
+		border: 1px solid var(--em-border);
+		border-radius: var(--em-radius-sm);
+		cursor: pointer;
+		font-size: 1rem;
+		color: var(--em-text-secondary);
+		transition: all var(--em-transition-fast);
+	}
+
+	.month-nav-btn:hover:not(:disabled) {
+		background-color: var(--em-surface-hover);
+		color: var(--em-text-primary);
+	}
+
+	.month-nav-btn:disabled {
+		opacity: 0.5;
+		cursor: not-allowed;
+	}
+
+	.month-label {
+		font-size: 0.875rem;
+		font-weight: 500;
+		color: var(--em-text-primary);
+		min-width: 120px;
+		text-align: center;
+	}
+
 	.donut-wrapper {
 		display: flex;
 		justify-content: center;
@@ -638,8 +734,8 @@
 	}
 
 	.heatmap-wrapper {
-		max-width: 400px;
-		margin: 0 auto;
+		display: flex;
+		justify-content: center;
 	}
 
 	/* Day of Week Chart */
@@ -686,11 +782,11 @@
 		color: var(--em-text-primary);
 	}
 
-	/* Payment Methods */
-	.payment-list {
-		display: flex;
-		flex-direction: column;
-		gap: 1rem;
+	/* Payment Methods Grid */
+	.payment-grid {
+		display: grid;
+		grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+		gap: 1.5rem;
 	}
 
 	.payment-item {
@@ -846,7 +942,8 @@
 
 		.em-card {
 			box-shadow: none;
-			border: 1px solid #ddd;
+			border: 1px solid #ccc;
+			break-inside: avoid;
 		}
 
 		.period-selector {
@@ -861,8 +958,59 @@
 		.period-btn.active {
 			display: block;
 			background: none;
-			color: black;
+			color: #000;
 			padding: 0;
+			font-weight: 700;
+		}
+
+		/* Force dark text for print */
+		.comparison-amount,
+		.comparison-title,
+		.comparison-count,
+		.chart-title,
+		.day-label,
+		.day-amount,
+		.payment-label,
+		.payment-amount,
+		.payment-count,
+		.merchant-name,
+		.merchant-amount,
+		.merchant-count,
+		.merchant-rank,
+		.category-table th,
+		.category-table td,
+		.percentage-badge {
+			color: #000 !important;
+		}
+
+		.change-indicator {
+			background-color: #f0f0f0 !important;
+			color: #000 !important;
+		}
+
+		.change-indicator.increase {
+			border: 1px solid #dc2626;
+		}
+
+		.change-indicator.decrease {
+			border: 1px solid #16a34a;
+		}
+
+		.day-bar-fill,
+		.payment-bar-fill {
+			background: #333 !important;
+		}
+
+		.category-table {
+			color: #000;
+		}
+
+		.category-table th {
+			background-color: #f0f0f0;
+		}
+
+		.percentage-badge {
+			background-color: #e5e5e5 !important;
 		}
 	}
 
@@ -886,6 +1034,12 @@
 
 		.category-table {
 			font-size: 0.75rem;
+		}
+
+		.chart-header-with-nav {
+			flex-direction: column;
+			align-items: flex-start;
+			gap: 0.75rem;
 		}
 	}
 </style>
