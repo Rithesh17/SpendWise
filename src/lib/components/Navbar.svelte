@@ -15,10 +15,42 @@
 
 	let isMenuOpen = $state(false);
 	let navRef = $state<HTMLElement | null>(null);
+	let previousPath = '';
 
 	let currentPath = $derived($page.url.pathname);
 
-	function toggleMenu() {
+	// Track path changes to close menu on navigation
+	$effect(() => {
+		const path = $page.url.pathname;
+		if (previousPath && path !== previousPath && isMenuOpen) {
+			isMenuOpen = false;
+		}
+		previousPath = path;
+	});
+
+	// Setup click outside listener
+	$effect(() => {
+		if (!isMenuOpen) return;
+
+		function handleClickOutside(event: MouseEvent) {
+			if (navRef && !navRef.contains(event.target as Node)) {
+				isMenuOpen = false;
+			}
+		}
+
+		// Use setTimeout to avoid the current click event
+		const timeoutId = setTimeout(() => {
+			document.addEventListener('click', handleClickOutside);
+		}, 0);
+
+		return () => {
+			clearTimeout(timeoutId);
+			document.removeEventListener('click', handleClickOutside);
+		};
+	});
+
+	function toggleMenu(event: MouseEvent) {
+		event.stopPropagation();
 		isMenuOpen = !isMenuOpen;
 	}
 
@@ -26,23 +58,10 @@
 		isMenuOpen = false;
 	}
 
-	// Close menu on route change
-	$effect(() => {
-		$page.url.pathname;
-		closeMenu();
-	});
-
-	// Close menu when clicking outside the navbar
-	function handleGlobalClick(event: MouseEvent) {
-		if (isMenuOpen && navRef && !navRef.contains(event.target as Node)) {
-			closeMenu();
-		}
-	}
-
 	// Close menu on escape key
 	function handleKeydown(event: KeyboardEvent) {
 		if (event.key === 'Escape' && isMenuOpen) {
-			closeMenu();
+			isMenuOpen = false;
 		}
 	}
 
@@ -63,7 +82,7 @@
 	let displayItems = $derived(navItems.length > 0 ? navItems : defaultNavItems);
 </script>
 
-<svelte:window onclick={handleGlobalClick} onkeydown={handleKeydown} />
+<svelte:window onkeydown={handleKeydown} />
 
 <nav class="navbar" bind:this={navRef}>
 	<div class="navbar-container">
@@ -98,7 +117,7 @@
 			<!-- Mobile Menu Toggle -->
 			<button 
 				class="mobile-menu-toggle"
-				onclick={toggleMenu}
+				onclick={(e) => toggleMenu(e)}
 				aria-label="Toggle menu"
 				aria-expanded={isMenuOpen}
 			>
