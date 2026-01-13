@@ -15,6 +15,7 @@ export { default as Skeleton } from './Skeleton.svelte';
 export { default as DonutChart } from './DonutChart.svelte';
 export { default as BarChart } from './BarChart.svelte';
 export { default as SparkLine } from './SparkLine.svelte';
+export { default as SpendingHeatmap } from './SpendingHeatmap.svelte';
 
 // Interactive Components
 export { default as Button } from './Button.svelte';

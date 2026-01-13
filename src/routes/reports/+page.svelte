@@ -1,25 +1,60 @@
 <script lang="ts">
-	import { PageHeader, StatCard } from '$lib/components';
+	import { PageHeader, StatCard, DonutChart, BarChart, SpendingHeatmap, EmptyState } from '$lib/components';
 	import { 
 		expenses,
-		todayExpenses,
 		weekExpenses, 
 		monthExpenses,
-		todayStats,
 		weekStats,
 		monthStats,
 		categories
 	} from '$lib/stores';
 	import { preferences } from '$lib/stores/preferences';
-	import { formatCurrency, calculateCategoryStats, calculateStats, startOfYear, filterByDateRange } from '$lib/utils';
+	import { 
+		formatCurrency, 
+		calculateCategoryStats, 
+		calculateStats, 
+		startOfYear, 
+		startOfMonth,
+		startOfWeek,
+		filterByDateRange,
+		getDailySpending,
+		getMonthlySpending
+	} from '$lib/utils';
 	import { downloadAsCSV } from '$lib/utils/storage';
+	import type { Expense } from '$lib/types';
 
 	type Period = 'week' | 'month' | 'year';
 	let selectedPeriod = $state<Period>('month');
 
-	// Calculate year stats
+	// Calculate period expenses
 	let yearExpenses = $derived(filterByDateRange($expenses, startOfYear(), new Date()));
 	let yearStats = $derived(calculateStats(yearExpenses));
+
+	// Previous period expenses for comparison
+	let previousPeriodExpenses = $derived(() => {
+		const now = new Date();
+		switch (selectedPeriod) {
+			case 'week': {
+				const lastWeekStart = new Date(startOfWeek());
+				lastWeekStart.setDate(lastWeekStart.getDate() - 7);
+				const lastWeekEnd = new Date(startOfWeek());
+				lastWeekEnd.setDate(lastWeekEnd.getDate() - 1);
+				return filterByDateRange($expenses, lastWeekStart, lastWeekEnd);
+			}
+			case 'year': {
+				const lastYearStart = new Date(now.getFullYear() - 1, 0, 1);
+				const lastYearEnd = new Date(now.getFullYear() - 1, 11, 31);
+				return filterByDateRange($expenses, lastYearStart, lastYearEnd);
+			}
+			default: {
+				const lastMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+				const lastMonthEnd = new Date(now.getFullYear(), now.getMonth(), 0);
+				return filterByDateRange($expenses, lastMonthStart, lastMonthEnd);
+			}
+		}
+	});
+
+	let previousStats = $derived(calculateStats(previousPeriodExpenses()));
 
 	// Get stats based on selected period
 	let currentStats = $derived(() => {
@@ -38,40 +73,120 @@
 		}
 	});
 
+	// Calculate change percentage
+	let changePercentage = $derived(() => {
+		const current = currentStats().total;
+		const previous = previousStats.total;
+		if (previous === 0) return current > 0 ? 100 : 0;
+		return ((current - previous) / previous) * 100;
+	});
+
 	// Category breakdown for selected period
 	let categoryStats = $derived(calculateCategoryStats(currentExpenses(), $categories));
 
+	// Donut chart data
+	let donutData = $derived(categoryStats.slice(0, 6).map(cat => ({
+		label: cat.categoryName,
+		value: cat.total,
+		color: cat.color
+	})));
+
 	// Monthly trend (last 6 months)
-	let monthlyTrend = $derived(() => {
-		const months: { month: string; amount: number }[] = [];
-		const now = new Date();
-		
-		for (let i = 5; i >= 0; i--) {
-			const date = new Date(now.getFullYear(), now.getMonth() - i, 1);
-			const monthStart = new Date(date.getFullYear(), date.getMonth(), 1);
-			const monthEnd = new Date(date.getFullYear(), date.getMonth() + 1, 0);
-			
-			const monthExpenses = filterByDateRange($expenses, monthStart, monthEnd);
-			const total = monthExpenses.reduce((sum, e) => sum + e.amount, 0);
-			
-			months.push({
-				month: date.toLocaleString('default', { month: 'short' }),
-				amount: total
-			});
-		}
-		
-		return months;
+	let monthlyTrend = $derived(getMonthlySpending($expenses, 6));
+
+	// Daily spending for heatmap
+	let dailySpendingMap = $derived(() => {
+		const map = new Map<string, number>();
+		$expenses.forEach(exp => {
+			const dateStr = exp.date.split('T')[0];
+			map.set(dateStr, (map.get(dateStr) || 0) + exp.amount);
+		});
+		return map;
 	});
 
-	let maxTrend = $derived(Math.max(...monthlyTrend().map(m => m.amount), 1));
+	// Day of week analysis
+	let dayOfWeekData = $derived(() => {
+		const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+		const totals = [0, 0, 0, 0, 0, 0, 0];
+		const counts = [0, 0, 0, 0, 0, 0, 0];
+		
+		currentExpenses().forEach(exp => {
+			const day = new Date(exp.date).getDay();
+			totals[day] += exp.amount;
+			counts[day]++;
+		});
+		
+		return days.map((label, i) => ({
+			label,
+			value: totals[i],
+			count: counts[i],
+			average: counts[i] > 0 ? totals[i] / counts[i] : 0
+		}));
+	});
+
+	// Payment method breakdown
+	let paymentMethodData = $derived(() => {
+		const methods: Record<string, { total: number; count: number }> = {};
+		
+		currentExpenses().forEach(exp => {
+			const method = exp.paymentMethod || 'other';
+			if (!methods[method]) {
+				methods[method] = { total: 0, count: 0 };
+			}
+			methods[method].total += exp.amount;
+			methods[method].count++;
+		});
+		
+		const labels: Record<string, string> = {
+			cash: '💵 Cash',
+			card: '💳 Card',
+			digital: '📱 Digital',
+			bank: '🏦 Bank',
+			other: '📋 Other'
+		};
+		
+		return Object.entries(methods)
+			.map(([method, data]) => ({
+				method,
+				label: labels[method] || method,
+				...data
+			}))
+			.sort((a, b) => b.total - a.total);
+	});
+
+	// Top merchants
+	let topMerchants = $derived(() => {
+		const merchants: Record<string, { total: number; count: number }> = {};
+		
+		currentExpenses().forEach(exp => {
+			const merchant = exp.merchant || 'Unknown';
+			if (!merchants[merchant]) {
+				merchants[merchant] = { total: 0, count: 0 };
+			}
+			merchants[merchant].total += exp.amount;
+			merchants[merchant].count++;
+		});
+		
+		return Object.entries(merchants)
+			.map(([name, data]) => ({ name, ...data }))
+			.sort((a, b) => b.total - a.total)
+			.slice(0, 5);
+	});
+
+	// Period labels
+	const periodLabels: Record<Period, { current: string; previous: string }> = {
+		week: { current: 'This Week', previous: 'Last Week' },
+		month: { current: 'This Month', previous: 'Last Month' },
+		year: { current: 'This Year', previous: 'Last Year' }
+	};
 
 	function handleExportCSV() {
 		const date = new Date().toISOString().split('T')[0];
-		downloadAsCSV(`expenses-${date}.csv`);
+		downloadAsCSV(`expenses-${selectedPeriod}-${date}.csv`);
 	}
 
-	function handleExportPDF() {
-		alert('PDF export will be available in a future update.');
+	function handlePrint() {
+		window.print();
 	}
 </script>
 
@@ -87,24 +202,61 @@
 			subtitle="Analyze your spending patterns"
 		/>
 
-		<!-- Period Selector -->
-		<div class="period-selector">
-			<button 
-				class="period-btn" 
-				class:active={selectedPeriod === 'week'}
-				onclick={() => selectedPeriod = 'week'}
-			>This Week</button>
-			<button 
-				class="period-btn" 
-				class:active={selectedPeriod === 'month'}
-				onclick={() => selectedPeriod = 'month'}
-			>This Month</button>
-			<button 
-				class="period-btn" 
-				class:active={selectedPeriod === 'year'}
-				onclick={() => selectedPeriod = 'year'}
-			>This Year</button>
+		<!-- Period Selector & Actions -->
+		<div class="reports-toolbar">
+			<div class="period-selector">
+				<button 
+					class="period-btn" 
+					class:active={selectedPeriod === 'week'}
+					onclick={() => selectedPeriod = 'week'}
+				>This Week</button>
+				<button 
+					class="period-btn" 
+					class:active={selectedPeriod === 'month'}
+					onclick={() => selectedPeriod = 'month'}
+				>This Month</button>
+				<button 
+					class="period-btn" 
+					class:active={selectedPeriod === 'year'}
+					onclick={() => selectedPeriod = 'year'}
+				>This Year</button>
+			</div>
+			
+			<div class="toolbar-actions print-hide">
+				<button class="action-btn" onclick={handleExportCSV} title="Export CSV">
+					📥 Export
+				</button>
+				<button class="action-btn" onclick={handlePrint} title="Print Report">
+					🖨️ Print
+				</button>
+			</div>
 		</div>
+
+		<!-- Period Comparison -->
+		<section class="comparison-section">
+			<div class="comparison-card em-card">
+				<div class="comparison-period">
+					<h3 class="comparison-title">{periodLabels[selectedPeriod].current}</h3>
+					<span class="comparison-amount">{formatCurrency(currentStats().total, $preferences.currency)}</span>
+					<span class="comparison-count">{currentStats().count} transactions</span>
+				</div>
+				<div class="comparison-vs">
+					<span class="vs-label">vs</span>
+					<div class="change-indicator {changePercentage() >= 0 ? 'increase' : 'decrease'}">
+						{#if changePercentage() >= 0}
+							↑ {Math.abs(changePercentage()).toFixed(1)}%
+						{:else}
+							↓ {Math.abs(changePercentage()).toFixed(1)}%
+						{/if}
+					</div>
+				</div>
+				<div class="comparison-period previous">
+					<h3 class="comparison-title">{periodLabels[selectedPeriod].previous}</h3>
+					<span class="comparison-amount">{formatCurrency(previousStats.total, $preferences.currency)}</span>
+					<span class="comparison-count">{previousStats.count} transactions</span>
+				</div>
+			</div>
+		</section>
 
 		<!-- Summary Stats -->
 		<section class="stats-grid">
@@ -128,98 +280,184 @@
 			/>
 		</section>
 
-		<!-- Charts Section -->
+		<!-- Charts Row 1 -->
 		<div class="charts-grid">
 			<!-- Category Breakdown -->
 			<section class="chart-card em-card">
 				<h2 class="chart-title">Spending by Category</h2>
 				
-				<!-- Simple donut chart placeholder -->
-				<div class="donut-chart">
-					<div class="donut-visual">
-						<svg viewBox="0 0 36 36" class="donut-svg">
-							{#each categoryStats as cat, i}
-								{@const offset = categoryStats.slice(0, i).reduce((sum, c) => sum + c.percentage, 0)}
-								<circle
-									class="donut-segment"
-									stroke={cat.color}
-									stroke-dasharray="{cat.percentage} {100 - cat.percentage}"
-									stroke-dashoffset={-offset}
-									cx="18" cy="18" r="15.915"
-								></circle>
-							{/each}
-						</svg>
-						<div class="donut-center">
-							<span class="donut-total">{formatCurrency(currentStats().total, $preferences.currency)}</span>
-							<span class="donut-label">Total</span>
-						</div>
+				{#if donutData.length === 0}
+					<EmptyState
+						title="No data"
+						message="No expenses in this period"
+						icon="📊"
+					/>
+				{:else}
+					<div class="donut-wrapper">
+						<DonutChart 
+							data={donutData}
+							size={180}
+							strokeWidth={35}
+							totalLabel="Total"
+							formatValue={(v) => formatCurrency(v, $preferences.currency)}
+						/>
 					</div>
-				</div>
-
-				<div class="category-legend">
-					{#each categoryStats as cat}
-						<div class="legend-item">
-							<span class="legend-color" style="background-color: {cat.color};"></span>
-							<span class="legend-name">{cat.categoryName}</span>
-							<span class="legend-value">{formatCurrency(cat.total, $preferences.currency)}</span>
-							<span class="legend-percentage">{Math.round(cat.percentage)}%</span>
-						</div>
-					{/each}
-					{#if categoryStats.length === 0}
-						<p class="no-data">No expenses in this period</p>
-					{/if}
-				</div>
+				{/if}
 			</section>
 
 			<!-- Monthly Trend -->
 			<section class="chart-card em-card">
 				<h2 class="chart-title">Monthly Trend</h2>
 				
-				<div class="bar-chart">
-					{#each monthlyTrend() as month}
-						<div class="bar-item">
-							<div class="bar-container">
-								<div 
-									class="bar-fill"
-									style="height: {(month.amount / maxTrend) * 100}%;"
-								></div>
-							</div>
-							<span class="bar-label">{month.month}</span>
-							<span class="bar-value">{formatCurrency(month.amount, $preferences.currency)}</span>
-						</div>
-					{/each}
+				<div class="bar-chart-wrapper">
+					<BarChart 
+						data={monthlyTrend}
+						height={200}
+						barColor="var(--em-primary)"
+						formatValue={(v) => formatCurrency(v, $preferences.currency)}
+					/>
 				</div>
 			</section>
 		</div>
 
-		<!-- Export Section -->
-		<section class="export-section em-card">
-			<div class="export-info">
-				<h3 class="export-title">Export Report</h3>
-				<p class="export-description">Download your expense data for the selected period.</p>
+		<!-- Spending Heatmap -->
+		<section class="chart-card em-card full-width">
+			<h2 class="chart-title">Daily Spending</h2>
+			<div class="heatmap-wrapper">
+				<SpendingHeatmap 
+					data={dailySpendingMap()}
+					month={new Date()}
+				/>
 			</div>
-			<div class="export-actions">
-				<button class="export-btn export-csv" onclick={handleExportCSV}>
-					<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-						<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-						<polyline points="14 2 14 8 20 8"></polyline>
-						<line x1="16" y1="13" x2="8" y2="13"></line>
-						<line x1="16" y1="17" x2="8" y2="17"></line>
-						<polyline points="10 9 9 9 8 9"></polyline>
-					</svg>
-					Export CSV
-				</button>
-				<button class="export-btn export-pdf" onclick={handleExportPDF}>
-					<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-						<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-						<polyline points="14 2 14 8 20 8"></polyline>
-						<line x1="16" y1="13" x2="8" y2="13"></line>
-						<line x1="16" y1="17" x2="8" y2="17"></line>
-						<polyline points="10 9 9 9 8 9"></polyline>
-					</svg>
-					Export PDF
-				</button>
-			</div>
+		</section>
+
+		<!-- Charts Row 2 -->
+		<div class="charts-grid">
+			<!-- Day of Week -->
+			<section class="chart-card em-card">
+				<h2 class="chart-title">Spending by Day of Week</h2>
+				
+				<div class="day-chart">
+					{#each dayOfWeekData() as day}
+						{@const maxDayValue = Math.max(...dayOfWeekData().map(d => d.value), 1)}
+						<div class="day-bar-item">
+							<span class="day-label">{day.label}</span>
+							<div class="day-bar-wrapper">
+								<div 
+									class="day-bar-fill"
+									style="width: {(day.value / maxDayValue) * 100}%;"
+								></div>
+							</div>
+							<span class="day-amount">{formatCurrency(day.value, $preferences.currency)}</span>
+						</div>
+					{/each}
+				</div>
+			</section>
+
+			<!-- Payment Methods -->
+			<section class="chart-card em-card">
+				<h2 class="chart-title">Payment Methods</h2>
+				
+				{#if paymentMethodData().length === 0}
+					<EmptyState
+						title="No data"
+						message="No payment data available"
+						icon="💳"
+					/>
+				{:else}
+					<div class="payment-list">
+						{#each paymentMethodData() as method}
+							{@const maxPayment = Math.max(...paymentMethodData().map(m => m.total), 1)}
+							<div class="payment-item">
+								<div class="payment-header">
+									<span class="payment-label">{method.label}</span>
+									<span class="payment-amount">{formatCurrency(method.total, $preferences.currency)}</span>
+								</div>
+								<div class="payment-bar-wrapper">
+									<div 
+										class="payment-bar-fill"
+										style="width: {(method.total / maxPayment) * 100}%;"
+									></div>
+								</div>
+								<span class="payment-count">{method.count} transaction{method.count !== 1 ? 's' : ''}</span>
+							</div>
+						{/each}
+					</div>
+				{/if}
+			</section>
+		</div>
+
+		<!-- Top Merchants -->
+		{#if topMerchants().length > 0 && topMerchants()[0].name !== 'Unknown'}
+			<section class="chart-card em-card full-width">
+				<h2 class="chart-title">Top Merchants</h2>
+				
+				<div class="merchants-grid">
+					{#each topMerchants() as merchant, i}
+						<div class="merchant-card">
+							<span class="merchant-rank">#{i + 1}</span>
+							<div class="merchant-info">
+								<span class="merchant-name">{merchant.name}</span>
+								<span class="merchant-count">{merchant.count} visit{merchant.count !== 1 ? 's' : ''}</span>
+							</div>
+							<span class="merchant-amount">{formatCurrency(merchant.total, $preferences.currency)}</span>
+						</div>
+					{/each}
+				</div>
+			</section>
+		{/if}
+
+		<!-- Category Table -->
+		<section class="chart-card em-card full-width">
+			<h2 class="chart-title">Category Breakdown</h2>
+			
+			{#if categoryStats.length === 0}
+				<EmptyState
+					title="No expenses"
+					message="Add expenses to see the breakdown"
+					icon="📋"
+				/>
+			{:else}
+				<div class="category-table-wrapper">
+					<table class="category-table">
+						<thead>
+							<tr>
+								<th>Category</th>
+								<th class="text-right">Transactions</th>
+								<th class="text-right">Total</th>
+								<th class="text-right">Average</th>
+								<th class="text-right">% of Total</th>
+							</tr>
+						</thead>
+						<tbody>
+							{#each categoryStats as cat}
+								{@const category = $categories.find(c => c.id === cat.categoryId)}
+								<tr>
+									<td>
+										<span class="cat-icon">{category?.icon || '📋'}</span>
+										{cat.categoryName}
+									</td>
+									<td class="text-right">{cat.count}</td>
+									<td class="text-right font-medium">{formatCurrency(cat.total, $preferences.currency)}</td>
+									<td class="text-right">{formatCurrency(cat.average, $preferences.currency)}</td>
+									<td class="text-right">
+										<span class="percentage-badge">{Math.round(cat.percentage)}%</span>
+									</td>
+								</tr>
+							{/each}
+						</tbody>
+						<tfoot>
+							<tr>
+								<td><strong>Total</strong></td>
+								<td class="text-right"><strong>{currentStats().count}</strong></td>
+								<td class="text-right"><strong>{formatCurrency(currentStats().total, $preferences.currency)}</strong></td>
+								<td class="text-right"><strong>{formatCurrency(currentStats().average, $preferences.currency)}</strong></td>
+								<td class="text-right"><strong>100%</strong></td>
+							</tr>
+						</tfoot>
+					</table>
+				</div>
+			{/if}
 		</section>
 	</div>
 </div>
@@ -229,14 +467,22 @@
 		padding-bottom: 2rem;
 	}
 
+	/* Toolbar */
+	.reports-toolbar {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		flex-wrap: wrap;
+		gap: 1rem;
+		margin-bottom: 2rem;
+	}
+
 	.period-selector {
 		display: flex;
 		gap: 0.5rem;
-		margin-bottom: 2rem;
 		background-color: var(--em-surface);
 		padding: 0.25rem;
 		border-radius: var(--em-radius-lg);
-		width: fit-content;
 	}
 
 	.period-btn {
@@ -259,6 +505,100 @@
 		color: white;
 	}
 
+	.toolbar-actions {
+		display: flex;
+		gap: 0.5rem;
+	}
+
+	.action-btn {
+		padding: 0.5rem 1rem;
+		background-color: var(--em-surface);
+		border: 1px solid var(--em-border);
+		border-radius: var(--em-radius-md);
+		color: var(--em-text-secondary);
+		font-size: 0.875rem;
+		cursor: pointer;
+		transition: all var(--em-transition-fast);
+	}
+
+	.action-btn:hover {
+		background-color: var(--em-surface-hover);
+		color: var(--em-text-primary);
+	}
+
+	/* Comparison Section */
+	.comparison-section {
+		margin-bottom: 2rem;
+	}
+
+	.comparison-card {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		gap: 2rem;
+		padding: 1.5rem 2rem;
+	}
+
+	.comparison-period {
+		text-align: center;
+		flex: 1;
+		max-width: 200px;
+	}
+
+	.comparison-period.previous {
+		opacity: 0.7;
+	}
+
+	.comparison-title {
+		font-size: 0.875rem;
+		font-weight: 500;
+		color: var(--em-text-secondary);
+		margin: 0 0 0.5rem;
+	}
+
+	.comparison-amount {
+		display: block;
+		font-size: 1.5rem;
+		font-weight: 700;
+		color: var(--em-text-primary);
+	}
+
+	.comparison-count {
+		font-size: 0.75rem;
+		color: var(--em-text-muted);
+	}
+
+	.comparison-vs {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		gap: 0.5rem;
+	}
+
+	.vs-label {
+		font-size: 0.75rem;
+		color: var(--em-text-muted);
+		text-transform: uppercase;
+	}
+
+	.change-indicator {
+		padding: 0.375rem 0.75rem;
+		border-radius: var(--em-radius-full);
+		font-size: 0.875rem;
+		font-weight: 600;
+	}
+
+	.change-indicator.increase {
+		background-color: var(--em-expense-bg);
+		color: var(--em-expense);
+	}
+
+	.change-indicator.decrease {
+		background-color: var(--em-income-bg);
+		color: var(--em-income);
+	}
+
+	/* Stats Grid */
 	.stats-grid {
 		display: grid;
 		grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
@@ -266,15 +606,20 @@
 		margin-bottom: 2rem;
 	}
 
+	/* Charts Grid */
 	.charts-grid {
 		display: grid;
 		grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
 		gap: 1.5rem;
-		margin-bottom: 2rem;
+		margin-bottom: 1.5rem;
 	}
 
 	.chart-card {
 		padding: 1.5rem;
+	}
+
+	.chart-card.full-width {
+		grid-column: 1 / -1;
 	}
 
 	.chart-title {
@@ -283,203 +628,242 @@
 		margin: 0 0 1.5rem;
 	}
 
-	/* Donut Chart */
-	.donut-chart {
+	.donut-wrapper {
+		display: flex;
+		justify-content: center;
+	}
+
+	.bar-chart-wrapper {
+		padding: 0.5rem 0;
+	}
+
+	.heatmap-wrapper {
+		max-width: 400px;
+		margin: 0 auto;
+	}
+
+	/* Day of Week Chart */
+	.day-chart {
 		display: flex;
 		flex-direction: column;
+		gap: 0.75rem;
+	}
+
+	.day-bar-item {
+		display: flex;
 		align-items: center;
-		margin-bottom: 1.5rem;
+		gap: 0.75rem;
 	}
 
-	.donut-visual {
-		position: relative;
-		width: 180px;
-		height: 180px;
-	}
-
-	.donut-svg {
-		width: 100%;
-		height: 100%;
-		transform: rotate(-90deg);
-	}
-
-	.donut-segment {
-		fill: none;
-		stroke-width: 4;
-		transition: stroke-dasharray 0.5s ease;
-	}
-
-	.donut-center {
-		position: absolute;
-		top: 50%;
-		left: 50%;
-		transform: translate(-50%, -50%);
-		text-align: center;
-	}
-
-	.donut-total {
-		display: block;
-		font-size: 1.25rem;
-		font-weight: 700;
-		color: var(--em-text-primary);
-	}
-
-	.donut-label {
+	.day-label {
+		width: 40px;
 		font-size: 0.75rem;
-		color: var(--em-text-muted);
-	}
-
-	.category-legend {
-		display: flex;
-		flex-direction: column;
-		gap: 0.75rem;
-	}
-
-	.legend-item {
-		display: flex;
-		align-items: center;
-		gap: 0.75rem;
-	}
-
-	.legend-color {
-		width: 12px;
-		height: 12px;
-		border-radius: 3px;
-		flex-shrink: 0;
-	}
-
-	.legend-name {
-		flex: 1;
-		font-size: 0.875rem;
-		color: var(--em-text-primary);
-	}
-
-	.legend-value {
-		font-size: 0.875rem;
 		font-weight: 500;
 		color: var(--em-text-secondary);
-		font-variant-numeric: tabular-nums;
 	}
 
-	.legend-percentage {
-		font-size: 0.75rem;
-		color: var(--em-text-muted);
-		width: 40px;
-		text-align: right;
-	}
-
-	.no-data {
-		text-align: center;
-		color: var(--em-text-muted);
-		font-size: 0.875rem;
-		padding: 1rem;
-	}
-
-	/* Bar Chart */
-	.bar-chart {
-		display: flex;
-		justify-content: space-between;
-		align-items: flex-end;
-		height: 200px;
-		gap: 0.75rem;
-		padding-top: 1rem;
-	}
-
-	.bar-item {
+	.day-bar-wrapper {
 		flex: 1;
-		display: flex;
-		flex-direction: column;
-		align-items: center;
-		gap: 0.5rem;
-	}
-
-	.bar-container {
-		width: 100%;
-		height: 150px;
+		height: 24px;
 		background-color: var(--em-bg-tertiary);
-		border-radius: var(--em-radius-sm) var(--em-radius-sm) 0 0;
-		display: flex;
-		align-items: flex-end;
+		border-radius: var(--em-radius-sm);
 		overflow: hidden;
 	}
 
-	.bar-fill {
-		width: 100%;
-		background: linear-gradient(to top, var(--em-primary), var(--em-primary-light));
-		border-radius: var(--em-radius-sm) var(--em-radius-sm) 0 0;
-		transition: height 0.5s ease;
-		min-height: 2px;
+	.day-bar-fill {
+		height: 100%;
+		background: linear-gradient(to right, var(--em-primary), var(--em-primary-light));
+		border-radius: var(--em-radius-sm);
+		transition: width 0.5s ease;
+		min-width: 2px;
 	}
 
-	.bar-label {
+	.day-amount {
+		width: 80px;
+		text-align: right;
 		font-size: 0.75rem;
-		color: var(--em-text-muted);
 		font-weight: 500;
-	}
-
-	.bar-value {
-		font-size: 0.625rem;
-		color: var(--em-text-secondary);
-		font-weight: 500;
-	}
-
-	/* Export Section */
-	.export-section {
-		display: flex;
-		justify-content: space-between;
-		align-items: center;
-		padding: 1.5rem;
-		flex-wrap: wrap;
-		gap: 1rem;
-	}
-
-	.export-title {
-		font-size: 1rem;
-		font-weight: 600;
-		margin: 0 0 0.25rem;
-	}
-
-	.export-description {
-		font-size: 0.875rem;
-		color: var(--em-text-secondary);
-		margin: 0;
-	}
-
-	.export-actions {
-		display: flex;
-		gap: 0.75rem;
-	}
-
-	.export-btn {
-		display: flex;
-		align-items: center;
-		gap: 0.5rem;
-		padding: 0.75rem 1.25rem;
-		border-radius: var(--em-radius-md);
-		font-weight: 500;
-		cursor: pointer;
-		transition: all var(--em-transition-fast);
-	}
-
-	.export-csv {
-		background-color: var(--em-surface-hover);
-		border: 1px solid var(--em-border);
 		color: var(--em-text-primary);
 	}
 
-	.export-csv:hover {
-		background-color: var(--em-bg-hover);
-		border-color: var(--em-primary);
+	/* Payment Methods */
+	.payment-list {
+		display: flex;
+		flex-direction: column;
+		gap: 1rem;
 	}
 
-	.export-pdf {
+	.payment-item {
+		display: flex;
+		flex-direction: column;
+		gap: 0.375rem;
+	}
+
+	.payment-header {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+	}
+
+	.payment-label {
+		font-size: 0.875rem;
+		font-weight: 500;
+	}
+
+	.payment-amount {
+		font-size: 0.875rem;
+		font-weight: 600;
+		color: var(--em-text-primary);
+	}
+
+	.payment-bar-wrapper {
+		height: 8px;
+		background-color: var(--em-bg-tertiary);
+		border-radius: var(--em-radius-full);
+		overflow: hidden;
+	}
+
+	.payment-bar-fill {
+		height: 100%;
 		background-color: var(--em-primary);
-		border: 1px solid var(--em-primary);
-		color: white;
+		border-radius: var(--em-radius-full);
+		transition: width 0.5s ease;
 	}
 
-	.export-pdf:hover {
-		background-color: var(--em-primary-hover);
+	.payment-count {
+		font-size: 0.6875rem;
+		color: var(--em-text-muted);
+	}
+
+	/* Merchants Grid */
+	.merchants-grid {
+		display: grid;
+		grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+		gap: 1rem;
+	}
+
+	.merchant-card {
+		display: flex;
+		align-items: center;
+		gap: 0.75rem;
+		padding: 1rem;
+		background-color: var(--em-bg-tertiary);
+		border-radius: var(--em-radius-md);
+	}
+
+	.merchant-rank {
+		font-size: 0.75rem;
+		font-weight: 700;
+		color: var(--em-text-muted);
+	}
+
+	.merchant-info {
+		flex: 1;
+		display: flex;
+		flex-direction: column;
+	}
+
+	.merchant-name {
+		font-weight: 500;
+		font-size: 0.875rem;
+	}
+
+	.merchant-count {
+		font-size: 0.6875rem;
+		color: var(--em-text-muted);
+	}
+
+	.merchant-amount {
+		font-weight: 600;
+		font-size: 0.875rem;
+		color: var(--em-text-primary);
+	}
+
+	/* Category Table */
+	.category-table-wrapper {
+		overflow-x: auto;
+	}
+
+	.category-table {
+		width: 100%;
+		border-collapse: collapse;
+		font-size: 0.875rem;
+	}
+
+	.category-table th {
+		text-align: left;
+		padding: 0.75rem 1rem;
+		font-weight: 500;
+		color: var(--em-text-muted);
+		border-bottom: 1px solid var(--em-border);
+		white-space: nowrap;
+	}
+
+	.category-table td {
+		padding: 0.75rem 1rem;
+		border-bottom: 1px solid var(--em-border);
+		white-space: nowrap;
+	}
+
+	.category-table tbody tr:hover {
+		background-color: var(--em-bg-hover);
+	}
+
+	.category-table tfoot td {
+		border-bottom: none;
+		border-top: 2px solid var(--em-border);
+	}
+
+	.cat-icon {
+		margin-right: 0.5rem;
+	}
+
+	.text-right {
+		text-align: right;
+	}
+
+	.font-medium {
+		font-weight: 500;
+	}
+
+	.percentage-badge {
+		display: inline-block;
+		padding: 0.125rem 0.5rem;
+		background-color: var(--em-bg-tertiary);
+		border-radius: var(--em-radius-sm);
+		font-size: 0.75rem;
+	}
+
+	/* Print styles */
+	@media print {
+		.print-hide {
+			display: none !important;
+		}
+
+		.reports-page {
+			padding: 0;
+		}
+
+		.em-card {
+			box-shadow: none;
+			border: 1px solid #ddd;
+		}
+
+		.period-selector {
+			background: none;
+			padding: 0;
+		}
+
+		.period-btn {
+			display: none;
+		}
+
+		.period-btn.active {
+			display: block;
+			background: none;
+			color: black;
+			padding: 0;
+		}
 	}
 
 	@media (max-width: 600px) {
@@ -487,14 +871,21 @@
 			grid-template-columns: 1fr;
 		}
 
-		.export-section {
+		.comparison-card {
 			flex-direction: column;
-			align-items: stretch;
-			text-align: center;
+			gap: 1rem;
 		}
 
-		.export-actions {
-			justify-content: center;
+		.comparison-period {
+			max-width: none;
+		}
+
+		.merchants-grid {
+			grid-template-columns: 1fr;
+		}
+
+		.category-table {
+			font-size: 0.75rem;
 		}
 	}
 </style>

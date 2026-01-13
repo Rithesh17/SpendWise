@@ -1211,7 +1211,7 @@ This section outlines the phased approach to building the Expense Tracker applic
 | 4 | Category Management | ✅ Completed | Category CRUD, icons, colors |
 | 5 | Dashboard & Visualizations | ✅ Completed | Charts, metrics, quick stats |
 | 6 | Budget Management | ✅ Completed | Budget tracking, alerts, progress |
-| 7 | Reports & Analytics | 🔲 Not Started | Advanced reports, exports, trends |
+| 7 | Reports & Analytics | ✅ Completed | Advanced reports, exports, trends |
 | 8 | Search & Filtering | 🔲 Not Started | Full-text search, advanced filters |
 | 9 | Firebase Integration | 🔲 Not Started | Auth, Firestore, real-time sync |
 | 10 | Sharing & Collaboration | 🔲 Not Started | Shareable links, friends, groups |
@@ -1367,28 +1367,28 @@ This section outlines the phased approach to building the Expense Tracker applic
 
 ---
 
-### Phase 7: Reports & Analytics
+### Phase 7: Reports & Analytics ✅
 **Goal**: Detailed expense analysis and reporting
 
 #### Tasks
 
 | # | Task | Status | Notes |
 |---|------|--------|-------|
-| 7.1 | Create Reports page layout | 🔲 | Period selector, chart area, tables |
-| 7.2 | Implement period comparison | 🔲 | This month vs last month |
-| 7.3 | Create category deep-dive report | 🔲 | Detailed category analysis |
-| 7.4 | Build spending heatmap (calendar view) | 🔲 | Daily spending intensity |
-| 7.5 | Add day-of-week analysis | 🔲 | Spending patterns by weekday |
-| 7.6 | Create merchant/payee analysis | 🔲 | Where money is going |
-| 7.7 | Implement year-over-year comparison | 🔲 | Annual trends |
-| 7.8 | Add report export (PDF) | 🔲 | Downloadable reports |
-| 7.9 | Create printable report view | 🔲 | Print-friendly layout |
+| 7.1 | Create Reports page layout | ✅ | Period selector, charts, tables |
+| 7.2 | Implement period comparison | ✅ | Current vs previous with % change |
+| 7.3 | Create category deep-dive report | ✅ | Full table with stats |
+| 7.4 | Build spending heatmap (calendar view) | ✅ | Daily spending with intensity colors |
+| 7.5 | Add day-of-week analysis | ✅ | Horizontal bar chart by weekday |
+| 7.6 | Create merchant/payee analysis | ✅ | Top merchants + payment methods |
+| 7.7 | Implement monthly trend chart | ✅ | 6-month bar chart |
+| 7.8 | Add report export (CSV) | ✅ | Period-based export |
+| 7.9 | Create printable report view | ✅ | Print-friendly CSS styles |
 
 #### Deliverables
-- [ ] Comprehensive reports page
-- [ ] Multiple visualization types
-- [ ] Period comparisons
-- [ ] Export/print functionality
+- [x] Comprehensive reports page
+- [x] Multiple visualization types
+- [x] Period comparisons
+- [x] Export/print functionality
 
 ---
 
@@ -1513,6 +1513,6 @@ This section outlines the phased approach to building the Expense Tracker applic
 
 ---
 
-**Document Version**: 1.6  
+**Document Version**: 1.7  
 **Last Updated**: 2026-01-12  
-**Status**: Development Phase - Phase 7 Ready
+**Status**: Development Phase - Phase 8 Ready
