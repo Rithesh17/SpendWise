@@ -7,12 +7,34 @@
 		categories 
 	} from '$lib/stores';
 	import { preferences } from '$lib/stores/preferences';
-	import { formatCurrency, formatDate, searchExpenses, sortExpenses, filterByDateRange } from '$lib/utils';
+	import { 
+		formatCurrency, 
+		formatDate, 
+		searchExpenses, 
+		sortExpenses, 
+		filterByDateRange,
+		startOfWeek,
+		startOfMonth,
+		startOfYear
+	} from '$lib/utils';
+	import type { PaymentMethod } from '$lib/types';
 
-	// Filter state
+	// Search state
 	let searchQuery = $state('');
+	
+	// Filter state
 	let selectedCategoryFilters = $state<string[]>([]);
+	let selectedPaymentMethods = $state<PaymentMethod[]>([]);
+	let dateFrom = $state('');
+	let dateTo = $state('');
+	let amountMin = $state('');
+	let amountMax = $state('');
+	let quickFilter = $state<'today' | 'week' | 'month' | 'year' | 'all'>('all');
+	
+	// Sort state
 	let sortBy = $state('date-desc');
+	
+	// UI state
 	let showFilters = $state(false);
 	
 	// Bulk selection state
@@ -21,9 +43,54 @@
 	let showBulkCategoryModal = $state(false);
 	let bulkCategoryId = $state('');
 	
+	// Payment method options
+	const paymentMethods: Array<{value: PaymentMethod, label: string, icon: string}> = [
+		{ value: 'cash', label: 'Cash', icon: '💵' },
+		{ value: 'card', label: 'Card', icon: '💳' },
+		{ value: 'digital', label: 'Digital', icon: '📱' },
+		{ value: 'bank', label: 'Bank', icon: '🏦' },
+		{ value: 'other', label: 'Other', icon: '📋' }
+	];
+	
+	// Apply quick filter and reset date fields
+	function applyQuickFilter(filter: typeof quickFilter) {
+		quickFilter = filter;
+		dateFrom = '';
+		dateTo = '';
+	}
+	
 	// Compute filtered expenses
 	let filteredExpenses = $derived(() => {
 		let result = [...$expenses];
+		
+		// Apply quick filter or date range
+		if (quickFilter !== 'all' && !dateFrom && !dateTo) {
+			const now = new Date();
+			let start: Date;
+			let end = now;
+			
+			switch (quickFilter) {
+				case 'today':
+					start = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+					break;
+				case 'week':
+					start = startOfWeek();
+					break;
+				case 'month':
+					start = startOfMonth();
+					break;
+				case 'year':
+					start = startOfYear();
+					break;
+				default:
+					start = new Date(0);
+			}
+			result = filterByDateRange(result, start, end);
+		} else if (dateFrom || dateTo) {
+			const start = dateFrom ? new Date(dateFrom) : new Date(0);
+			const end = dateTo ? new Date(dateTo + 'T23:59:59') : new Date();
+			result = filterByDateRange(result, start, end);
+		}
 		
 		// Apply search
 		if (searchQuery.trim()) {
@@ -35,12 +102,33 @@
 			result = result.filter(exp => selectedCategoryFilters.includes(exp.categoryId));
 		}
 		
+		// Apply payment method filter
+		if (selectedPaymentMethods.length > 0) {
+			result = result.filter(exp => {
+				const method = exp.paymentMethod || 'other';
+				return selectedPaymentMethods.includes(method);
+			});
+		}
+		
+		// Apply amount range filter
+		const minAmount = parseFloat(amountMin);
+		const maxAmount = parseFloat(amountMax);
+		if (!isNaN(minAmount)) {
+			result = result.filter(exp => exp.amount >= minAmount);
+		}
+		if (!isNaN(maxAmount)) {
+			result = result.filter(exp => exp.amount <= maxAmount);
+		}
+		
 		// Apply sort
 		const [field, direction] = sortBy.split('-') as ['date' | 'amount' | 'description', 'asc' | 'desc'];
 		result = sortExpenses(result, field, direction);
 		
 		return result;
 	});
+	
+	// Calculate totals for filtered results
+	let filteredTotal = $derived(filteredExpenses().reduce((sum, e) => sum + e.amount, 0));
 	
 	// Check if all filtered expenses are selected
 	let allSelected = $derived(() => {
@@ -51,9 +139,22 @@
 	// Number of selected items
 	let selectedCount = $derived(selectedExpenseIds.size);
 	
+	// Count active filters
+	let activeFilterCount = $derived(() => {
+		let count = 0;
+		if (selectedCategoryFilters.length > 0) count++;
+		if (selectedPaymentMethods.length > 0) count++;
+		if (dateFrom || dateTo) count++;
+		if (amountMin || amountMax) count++;
+		if (quickFilter !== 'all') count++;
+		return count;
+	});
+	
 	// Check if any filters are active
 	let hasActiveFilters = $derived(
-		searchQuery.trim() !== '' || selectedCategoryFilters.length > 0 || sortBy !== 'date-desc'
+		searchQuery.trim() !== '' || 
+		activeFilterCount() > 0 || 
+		sortBy !== 'date-desc'
 	);
 
 	function getCategoryInfo(categoryId: string) {
@@ -78,10 +179,24 @@
 			selectedCategoryFilters = [...selectedCategoryFilters, catId];
 		}
 	}
+	
+	function togglePaymentMethod(method: PaymentMethod) {
+		if (selectedPaymentMethods.includes(method)) {
+			selectedPaymentMethods = selectedPaymentMethods.filter(m => m !== method);
+		} else {
+			selectedPaymentMethods = [...selectedPaymentMethods, method];
+		}
+	}
 
 	function clearFilters() {
 		searchQuery = '';
 		selectedCategoryFilters = [];
+		selectedPaymentMethods = [];
+		dateFrom = '';
+		dateTo = '';
+		amountMin = '';
+		amountMax = '';
+		quickFilter = 'all';
 		sortBy = 'date-desc';
 	}
 	
@@ -100,10 +215,8 @@
 	function toggleSelectAll() {
 		const filtered = filteredExpenses();
 		if (allSelected()) {
-			// Deselect all filtered
 			filtered.forEach(e => selectedExpenseIds.delete(e.id));
 		} else {
-			// Select all filtered
 			filtered.forEach(e => selectedExpenseIds.add(e.id));
 		}
 		selectedExpenseIds = new Set(selectedExpenseIds);
@@ -115,7 +228,7 @@
 	
 	// Bulk actions
 	function handleBulkDelete() {
-		const count = expenseActions.deleteMany([...selectedExpenseIds]);
+		expenseActions.deleteMany([...selectedExpenseIds]);
 		selectedExpenseIds = new Set();
 		showBulkDeleteModal = false;
 	}
@@ -164,22 +277,43 @@
 				</div>
 				<div class="bulk-actions">
 					<button class="em-btn em-btn-ghost" onclick={openBulkCategoryModal}>
-						<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-							<path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"></path>
-							<line x1="7" y1="7" x2="7.01" y2="7"></line>
-						</svg>
 						Change Category
 					</button>
 					<button class="em-btn em-btn-danger" onclick={() => showBulkDeleteModal = true}>
-						<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-							<polyline points="3 6 5 6 21 6"></polyline>
-							<path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
-						</svg>
 						Delete Selected
 					</button>
 				</div>
 			</div>
 		{:else}
+			<!-- Quick Filters -->
+			<div class="quick-filters">
+				<button 
+					class="quick-filter-btn" 
+					class:active={quickFilter === 'all' && !dateFrom && !dateTo}
+					onclick={() => applyQuickFilter('all')}
+				>All</button>
+				<button 
+					class="quick-filter-btn" 
+					class:active={quickFilter === 'today'}
+					onclick={() => applyQuickFilter('today')}
+				>Today</button>
+				<button 
+					class="quick-filter-btn" 
+					class:active={quickFilter === 'week'}
+					onclick={() => applyQuickFilter('week')}
+				>This Week</button>
+				<button 
+					class="quick-filter-btn" 
+					class:active={quickFilter === 'month'}
+					onclick={() => applyQuickFilter('month')}
+				>This Month</button>
+				<button 
+					class="quick-filter-btn" 
+					class:active={quickFilter === 'year'}
+					onclick={() => applyQuickFilter('year')}
+				>This Year</button>
+			</div>
+		
 			<!-- Search and Filter Bar -->
 			<div class="toolbar">
 				<div class="search-box">
@@ -189,7 +323,7 @@
 					</svg>
 					<input 
 						type="text" 
-						placeholder="Search expenses..." 
+						placeholder="Search description, merchant, notes, tags..." 
 						class="search-input"
 						bind:value={searchQuery}
 					/>
@@ -205,15 +339,15 @@
 				
 				<button 
 					class="filter-toggle" 
-					class:active={showFilters || hasActiveFilters}
+					class:active={showFilters || activeFilterCount() > 0}
 					onclick={() => showFilters = !showFilters}
 				>
 					<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
 						<polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon>
 					</svg>
 					Filters
-					{#if hasActiveFilters}
-						<span class="filter-badge"></span>
+					{#if activeFilterCount() > 0}
+						<span class="filter-count">{activeFilterCount()}</span>
 					{/if}
 				</button>
 
@@ -231,7 +365,7 @@
 		{#if showFilters && selectedCount === 0}
 			<div class="filter-panel em-card">
 				<div class="filter-header">
-					<h3 class="filter-title">Filters & Sort</h3>
+					<h3 class="filter-title">Advanced Filters</h3>
 					{#if hasActiveFilters}
 						<button class="clear-filters-btn" onclick={clearFilters}>
 							Clear All
@@ -240,18 +374,89 @@
 				</div>
 
 				<div class="filter-content">
-					<!-- Sort -->
-					<div class="filter-group">
-						<label class="filter-label">Sort By</label>
-						<select class="em-input filter-select" bind:value={sortBy}>
-							<option value="date-desc">Newest First</option>
-							<option value="date-asc">Oldest First</option>
-							<option value="amount-desc">Highest Amount</option>
-							<option value="amount-asc">Lowest Amount</option>
-						</select>
+					<div class="filter-row">
+						<!-- Date Range -->
+						<div class="filter-group">
+							<label class="filter-label">Date Range</label>
+							<div class="date-range">
+								<input 
+									type="date" 
+									class="em-input date-input"
+									bind:value={dateFrom}
+									onchange={() => quickFilter = 'all'}
+									max={dateTo || undefined}
+								/>
+								<span class="date-separator">to</span>
+								<input 
+									type="date" 
+									class="em-input date-input"
+									bind:value={dateTo}
+									onchange={() => quickFilter = 'all'}
+									min={dateFrom || undefined}
+								/>
+							</div>
+						</div>
+
+						<!-- Amount Range -->
+						<div class="filter-group">
+							<label class="filter-label">Amount Range</label>
+							<div class="amount-range">
+								<div class="amount-input-wrapper">
+									<span class="currency-prefix">{$preferences.currency}</span>
+									<input 
+										type="number" 
+										class="em-input amount-input"
+										placeholder="Min"
+										step="0.01"
+										min="0"
+										bind:value={amountMin}
+									/>
+								</div>
+								<span class="range-separator">–</span>
+								<div class="amount-input-wrapper">
+									<span class="currency-prefix">{$preferences.currency}</span>
+									<input 
+										type="number" 
+										class="em-input amount-input"
+										placeholder="Max"
+										step="0.01"
+										min="0"
+										bind:value={amountMax}
+									/>
+								</div>
+							</div>
+						</div>
+
+						<!-- Sort -->
+						<div class="filter-group">
+							<label class="filter-label">Sort By</label>
+							<select class="em-input filter-select" bind:value={sortBy}>
+								<option value="date-desc">Newest First</option>
+								<option value="date-asc">Oldest First</option>
+								<option value="amount-desc">Highest Amount</option>
+								<option value="amount-asc">Lowest Amount</option>
+							</select>
+						</div>
 					</div>
 
-					<!-- Categories (Multi-select) -->
+					<!-- Payment Methods -->
+					<div class="filter-group">
+						<label class="filter-label">Payment Method</label>
+						<div class="payment-chips">
+							{#each paymentMethods as method}
+								<button 
+									class="payment-chip"
+									class:selected={selectedPaymentMethods.includes(method.value)}
+									onclick={() => togglePaymentMethod(method.value)}
+								>
+									<span class="chip-icon">{method.icon}</span>
+									<span class="chip-name">{method.label}</span>
+								</button>
+							{/each}
+						</div>
+					</div>
+
+					<!-- Categories -->
 					<div class="filter-group">
 						<label class="filter-label">Categories</label>
 						<div class="category-chips">
@@ -274,6 +479,60 @@
 						</div>
 					</div>
 				</div>
+			</div>
+		{/if}
+
+		<!-- Active Filters Summary -->
+		{#if hasActiveFilters && !showFilters && selectedCount === 0}
+			<div class="active-filters-bar">
+				<span class="active-filters-label">Active filters:</span>
+				<div class="active-filters-tags">
+					{#if searchQuery.trim()}
+						<span class="filter-tag">
+							Search: "{searchQuery}"
+							<button onclick={() => searchQuery = ''}>×</button>
+						</span>
+					{/if}
+					{#if quickFilter !== 'all'}
+						<span class="filter-tag">
+							{quickFilter === 'today' ? 'Today' : quickFilter === 'week' ? 'This Week' : quickFilter === 'month' ? 'This Month' : 'This Year'}
+							<button onclick={() => quickFilter = 'all'}>×</button>
+						</span>
+					{/if}
+					{#if dateFrom || dateTo}
+						<span class="filter-tag">
+							Date: {dateFrom || '...'} to {dateTo || '...'}
+							<button onclick={() => { dateFrom = ''; dateTo = ''; }}>×</button>
+						</span>
+					{/if}
+					{#if amountMin || amountMax}
+						<span class="filter-tag">
+							Amount: {amountMin || '0'} - {amountMax || '∞'}
+							<button onclick={() => { amountMin = ''; amountMax = ''; }}>×</button>
+						</span>
+					{/if}
+					{#if selectedPaymentMethods.length > 0}
+						<span class="filter-tag">
+							{selectedPaymentMethods.length} payment method{selectedPaymentMethods.length > 1 ? 's' : ''}
+							<button onclick={() => selectedPaymentMethods = []}>×</button>
+						</span>
+					{/if}
+					{#if selectedCategoryFilters.length > 0}
+						<span class="filter-tag">
+							{selectedCategoryFilters.length} categor{selectedCategoryFilters.length > 1 ? 'ies' : 'y'}
+							<button onclick={() => selectedCategoryFilters = []}>×</button>
+						</span>
+					{/if}
+				</div>
+				<button class="clear-all-btn" onclick={clearFilters}>Clear all</button>
+			</div>
+		{/if}
+
+		<!-- Results Summary -->
+		{#if filteredExpenses().length > 0}
+			<div class="results-summary">
+				<span class="results-count">{filteredExpenses().length} expense{filteredExpenses().length !== 1 ? 's' : ''}</span>
+				<span class="results-total">Total: {formatCurrency(filteredTotal, $preferences.currency)}</span>
 			</div>
 		{/if}
 
@@ -320,7 +579,12 @@
 						</div>
 						<div class="cell description">
 							<span class="expense-icon">{category.icon}</span>
-							<span class="expense-name">{expense.description}</span>
+							<div class="expense-info">
+								<span class="expense-name">{expense.description}</span>
+								{#if expense.merchant}
+									<span class="expense-merchant">{expense.merchant}</span>
+								{/if}
+							</div>
 						</div>
 						<div class="cell category">
 							<span class="category-badge" style="background-color: {category.color}20; color: {category.color};">
@@ -353,10 +617,6 @@
 						</div>
 					</a>
 				{/each}
-				
-				<div class="list-footer">
-					<span class="count">{filteredExpenses().length} expense{filteredExpenses().length !== 1 ? 's' : ''}</span>
-				</div>
 			{/if}
 		</div>
 	</div>
@@ -422,6 +682,39 @@
 		padding-bottom: 2rem;
 	}
 
+	/* Quick Filters */
+	.quick-filters {
+		display: flex;
+		gap: 0.5rem;
+		margin-bottom: 1rem;
+		overflow-x: auto;
+		padding-bottom: 0.25rem;
+	}
+
+	.quick-filter-btn {
+		padding: 0.5rem 1rem;
+		background-color: var(--em-surface);
+		border: 1px solid var(--em-border);
+		border-radius: var(--em-radius-full);
+		color: var(--em-text-secondary);
+		font-size: 0.875rem;
+		font-weight: 500;
+		white-space: nowrap;
+		cursor: pointer;
+		transition: all var(--em-transition-fast);
+	}
+
+	.quick-filter-btn:hover {
+		background-color: var(--em-surface-hover);
+		color: var(--em-text-primary);
+	}
+
+	.quick-filter-btn.active {
+		background-color: var(--em-primary);
+		border-color: var(--em-primary);
+		color: white;
+	}
+
 	/* Bulk Action Bar */
 	.bulk-action-bar {
 		display: flex;
@@ -451,11 +744,6 @@
 		border-radius: var(--em-radius-sm);
 		color: white;
 		cursor: pointer;
-		transition: background-color var(--em-transition-fast);
-	}
-
-	.clear-selection-btn:hover {
-		background-color: rgba(255, 255, 255, 0.3);
 	}
 
 	.selected-count {
@@ -472,10 +760,6 @@
 		background-color: rgba(255, 255, 255, 0.15);
 		color: white;
 		border: 1px solid rgba(255, 255, 255, 0.3);
-	}
-
-	.bulk-actions .em-btn-ghost:hover {
-		background-color: rgba(255, 255, 255, 0.25);
 	}
 
 	/* Toolbar */
@@ -516,6 +800,10 @@
 		outline: none;
 	}
 
+	.search-input::placeholder {
+		color: var(--em-text-muted);
+	}
+
 	.clear-search {
 		display: flex;
 		align-items: center;
@@ -525,10 +813,6 @@
 		color: var(--em-text-muted);
 		cursor: pointer;
 		padding: 0.25rem;
-	}
-
-	.clear-search:hover {
-		color: var(--em-text-primary);
 	}
 
 	.filter-toggle {
@@ -543,7 +827,6 @@
 		font-weight: 500;
 		cursor: pointer;
 		transition: all var(--em-transition-fast);
-		position: relative;
 	}
 
 	.filter-toggle:hover,
@@ -553,14 +836,18 @@
 		border-color: var(--em-primary);
 	}
 
-	.filter-badge {
-		position: absolute;
-		top: -4px;
-		right: -4px;
-		width: 10px;
-		height: 10px;
+	.filter-count {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		min-width: 20px;
+		height: 20px;
 		background-color: var(--em-primary);
-		border-radius: 50%;
+		color: white;
+		font-size: 0.75rem;
+		font-weight: 600;
+		border-radius: var(--em-radius-full);
+		padding: 0 0.375rem;
 	}
 
 	.add-btn {
@@ -581,18 +868,18 @@
 	/* Filter Panel */
 	.filter-panel {
 		margin-bottom: 1rem;
-		padding: 1rem;
+		padding: 1.25rem;
 	}
 
 	.filter-header {
 		display: flex;
 		justify-content: space-between;
 		align-items: center;
-		margin-bottom: 1rem;
+		margin-bottom: 1.25rem;
 	}
 
 	.filter-title {
-		font-size: 0.875rem;
+		font-size: 1rem;
 		font-weight: 600;
 		margin: 0;
 		color: var(--em-text-primary);
@@ -607,14 +894,16 @@
 		cursor: pointer;
 	}
 
-	.clear-filters-btn:hover {
-		text-decoration: underline;
-	}
-
 	.filter-content {
 		display: flex;
 		flex-direction: column;
-		gap: 1rem;
+		gap: 1.25rem;
+	}
+
+	.filter-row {
+		display: grid;
+		grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+		gap: 1.25rem;
 	}
 
 	.filter-group {
@@ -625,7 +914,7 @@
 
 	.filter-label {
 		font-size: 0.75rem;
-		font-weight: 500;
+		font-weight: 600;
 		color: var(--em-text-muted);
 		text-transform: uppercase;
 		letter-spacing: 0.05em;
@@ -633,6 +922,84 @@
 
 	.filter-select {
 		max-width: 200px;
+	}
+
+	.date-range {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+	}
+
+	.date-input {
+		flex: 1;
+		min-width: 0;
+	}
+
+	.date-separator {
+		color: var(--em-text-muted);
+		font-size: 0.875rem;
+	}
+
+	.amount-range {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+	}
+
+	.amount-input-wrapper {
+		flex: 1;
+		display: flex;
+		align-items: center;
+		background-color: var(--em-surface);
+		border: 1px solid var(--em-border);
+		border-radius: var(--em-radius-md);
+		overflow: hidden;
+	}
+
+	.currency-prefix {
+		padding: 0 0.5rem 0 0.75rem;
+		color: var(--em-text-muted);
+		font-size: 0.875rem;
+	}
+
+	.amount-input {
+		flex: 1;
+		border: none !important;
+		min-width: 60px;
+	}
+
+	.range-separator {
+		color: var(--em-text-muted);
+	}
+
+	/* Payment Chips */
+	.payment-chips {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.5rem;
+	}
+
+	.payment-chip {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.375rem;
+		padding: 0.375rem 0.75rem;
+		background-color: var(--em-bg-tertiary);
+		border: 1px solid var(--em-border);
+		border-radius: var(--em-radius-full);
+		font-size: 0.8125rem;
+		cursor: pointer;
+		transition: all var(--em-transition-fast);
+	}
+
+	.payment-chip:hover {
+		background-color: var(--em-bg-hover);
+	}
+
+	.payment-chip.selected {
+		background-color: var(--em-primary);
+		border-color: var(--em-primary);
+		color: white;
 	}
 
 	/* Category Chips */
@@ -675,6 +1042,90 @@
 
 	.chip-check {
 		margin-left: 0.125rem;
+	}
+
+	/* Active Filters Bar */
+	.active-filters-bar {
+		display: flex;
+		align-items: center;
+		gap: 0.75rem;
+		padding: 0.75rem 1rem;
+		background-color: var(--em-surface);
+		border-radius: var(--em-radius-md);
+		margin-bottom: 1rem;
+		flex-wrap: wrap;
+	}
+
+	.active-filters-label {
+		font-size: 0.75rem;
+		font-weight: 500;
+		color: var(--em-text-muted);
+		text-transform: uppercase;
+	}
+
+	.active-filters-tags {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.5rem;
+		flex: 1;
+	}
+
+	.filter-tag {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.375rem;
+		padding: 0.25rem 0.5rem 0.25rem 0.75rem;
+		background-color: var(--em-bg-tertiary);
+		border-radius: var(--em-radius-full);
+		font-size: 0.75rem;
+		color: var(--em-text-primary);
+	}
+
+	.filter-tag button {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		width: 16px;
+		height: 16px;
+		background: transparent;
+		border: none;
+		color: var(--em-text-muted);
+		cursor: pointer;
+		font-size: 1rem;
+		line-height: 1;
+	}
+
+	.filter-tag button:hover {
+		color: var(--em-expense);
+	}
+
+	.clear-all-btn {
+		background: transparent;
+		border: none;
+		color: var(--em-primary);
+		font-size: 0.75rem;
+		font-weight: 500;
+		cursor: pointer;
+	}
+
+	/* Results Summary */
+	.results-summary {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		padding: 0.5rem 0;
+		margin-bottom: 0.5rem;
+	}
+
+	.results-count {
+		font-size: 0.875rem;
+		color: var(--em-text-secondary);
+	}
+
+	.results-total {
+		font-size: 0.875rem;
+		font-weight: 600;
+		color: var(--em-text-primary);
 	}
 
 	/* List Styles */
@@ -772,11 +1223,26 @@
 		justify-content: center;
 		background-color: var(--em-bg-tertiary);
 		border-radius: var(--em-radius-md);
+		flex-shrink: 0;
+	}
+
+	.expense-info {
+		display: flex;
+		flex-direction: column;
+		min-width: 0;
 	}
 
 	.expense-name {
 		font-weight: 500;
 		color: var(--em-text-primary);
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
+	}
+
+	.expense-merchant {
+		font-size: 0.75rem;
+		color: var(--em-text-muted);
 	}
 
 	.cell.category {
@@ -859,17 +1325,6 @@
 		color: var(--em-expense);
 	}
 
-	.list-footer {
-		padding: 1rem 1.25rem;
-		border-top: 1px solid var(--em-border);
-		text-align: center;
-	}
-
-	.count {
-		font-size: 0.875rem;
-		color: var(--em-text-muted);
-	}
-
 	/* Modal content */
 	.modal-content-center {
 		text-align: center;
@@ -926,6 +1381,20 @@
 
 		.bulk-actions {
 			flex-direction: column;
+		}
+
+		.filter-row {
+			grid-template-columns: 1fr;
+		}
+
+		.date-range,
+		.amount-range {
+			flex-direction: column;
+		}
+
+		.date-separator,
+		.range-separator {
+			display: none;
 		}
 	}
 </style>
