@@ -9,33 +9,33 @@ import type { Category, Expense, Budget } from '$lib/types';
 
 export const SEED_CATEGORIES: Category[] = [
   {
-    id: 'cat_food',
+    id: 'cat_groceries',
     userId: null, // System category
-    name: 'Food & Dining',
-    icon: '🍔',
-    color: '#F97316',
+    name: 'Groceries',
+    icon: '🛒',
+    color: '#10B981',
     createdAt: '2024-01-01T00:00:00.000Z',
-    budget: 500,
+    budget: 400,
     budgetPeriod: 'monthly'
   },
   {
-    id: 'cat_transport',
+    id: 'cat_food',
     userId: null,
-    name: 'Transport',
-    icon: '🚗',
-    color: '#3B82F6',
+    name: 'Food & Dining',
+    icon: '🍔',
+    color: '#F97316',
     createdAt: '2024-01-01T00:00:00.000Z',
     budget: 300,
     budgetPeriod: 'monthly'
   },
   {
-    id: 'cat_entertainment',
+    id: 'cat_travel',
     userId: null,
-    name: 'Entertainment',
-    icon: '🎬',
-    color: '#8B5CF6',
+    name: 'Travel',
+    icon: '✈️',
+    color: '#06B6D4',
     createdAt: '2024-01-01T00:00:00.000Z',
-    budget: 200,
+    budget: 250,
     budgetPeriod: 'monthly'
   },
   {
@@ -45,17 +45,27 @@ export const SEED_CATEGORIES: Category[] = [
     icon: '🛍️',
     color: '#EC4899',
     createdAt: '2024-01-01T00:00:00.000Z',
-    budget: 250,
+    budget: 200,
     budgetPeriod: 'monthly'
   },
   {
-    id: 'cat_utilities',
+    id: 'cat_entertainment',
     userId: null,
-    name: 'Utilities',
-    icon: '💡',
-    color: '#14B8A6',
+    name: 'Entertainment',
+    icon: '🎬',
+    color: '#8B5CF6',
     createdAt: '2024-01-01T00:00:00.000Z',
-    budget: 200,
+    budget: 150,
+    budgetPeriod: 'monthly'
+  },
+  {
+    id: 'cat_housing',
+    userId: null,
+    name: 'Housing',
+    icon: '🏠',
+    color: '#6366F1',
+    createdAt: '2024-01-01T00:00:00.000Z',
+    budget: 1200,
     budgetPeriod: 'monthly'
   },
   {
@@ -69,44 +79,14 @@ export const SEED_CATEGORIES: Category[] = [
     budgetPeriod: 'monthly'
   },
   {
-    id: 'cat_education',
-    userId: null,
-    name: 'Education',
-    icon: '📚',
-    color: '#F59E0B',
-    createdAt: '2024-01-01T00:00:00.000Z'
-  },
-  {
-    id: 'cat_travel',
-    userId: null,
-    name: 'Travel',
-    icon: '✈️',
-    color: '#06B6D4',
-    createdAt: '2024-01-01T00:00:00.000Z'
-  },
-  {
-    id: 'cat_housing',
-    userId: null,
-    name: 'Housing',
-    icon: '🏠',
-    color: '#6366F1',
-    createdAt: '2024-01-01T00:00:00.000Z'
-  },
-  {
-    id: 'cat_personal',
-    userId: null,
-    name: 'Personal Care',
-    icon: '💅',
-    color: '#F472B6',
-    createdAt: '2024-01-01T00:00:00.000Z'
-  },
-  {
     id: 'cat_subscriptions',
     userId: null,
     name: 'Subscriptions',
     icon: '📺',
     color: '#A855F7',
-    createdAt: '2024-01-01T00:00:00.000Z'
+    createdAt: '2024-01-01T00:00:00.000Z',
+    budget: 50,
+    budgetPeriod: 'monthly'
   },
   {
     id: 'cat_other',
@@ -149,7 +129,7 @@ export const DEMO_EXPENSES: Expense[] = [
     userId: 'local',
     amount: 18.75,
     description: 'Uber Ride',
-    categoryId: 'cat_transport',
+    categoryId: 'cat_travel',
     date: daysAgo(0),
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
@@ -175,7 +155,7 @@ export const DEMO_EXPENSES: Expense[] = [
     userId: 'local',
     amount: 67.30,
     description: 'Grocery Shopping',
-    categoryId: 'cat_food',
+    categoryId: 'cat_groceries',
     date: daysAgo(1),
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
@@ -189,7 +169,7 @@ export const DEMO_EXPENSES: Expense[] = [
     userId: 'local',
     amount: 124.00,
     description: 'Electric Bill',
-    categoryId: 'cat_utilities',
+    categoryId: 'cat_housing',
     date: daysAgo(2),
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
@@ -214,7 +194,7 @@ export const DEMO_EXPENSES: Expense[] = [
     userId: 'local',
     amount: 24.99,
     description: 'Book Purchase',
-    categoryId: 'cat_education',
+    categoryId: 'cat_other',
     date: daysAgo(3),
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
@@ -227,7 +207,7 @@ export const DEMO_EXPENSES: Expense[] = [
     userId: 'local',
     amount: 35.00,
     description: 'Gas Station',
-    categoryId: 'cat_transport',
+    categoryId: 'cat_travel',
     date: daysAgo(3),
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
@@ -306,7 +286,7 @@ export const DEMO_EXPENSES: Expense[] = [
     userId: 'local',
     amount: 150.00,
     description: 'Internet Bill',
-    categoryId: 'cat_utilities',
+    categoryId: 'cat_housing',
     date: daysAgo(10),
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
@@ -317,7 +297,7 @@ export const DEMO_EXPENSES: Expense[] = [
     userId: 'local',
     amount: 75.00,
     description: 'Haircut',
-    categoryId: 'cat_personal',
+    categoryId: 'cat_health',
     date: daysAgo(12),
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
@@ -385,6 +365,46 @@ export const DEMO_EXPENSES: Expense[] = [
     updatedAt: new Date().toISOString(),
     notes: 'Hotel + activities',
     tags: ['vacation', 'weekend']
+  },
+  // Additional sample expenses for better coverage
+  {
+    id: 'exp_demo_021',
+    userId: 'local',
+    amount: 125.50,
+    description: 'Weekly Groceries',
+    categoryId: 'cat_groceries',
+    date: daysAgo(7),
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    merchant: 'Trader Joe\'s',
+    paymentMethod: 'card',
+    tags: ['groceries']
+  },
+  {
+    id: 'exp_demo_022',
+    userId: 'local',
+    amount: 29.99,
+    description: 'Amazon Prime',
+    categoryId: 'cat_subscriptions',
+    date: daysAgo(8),
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    merchant: 'Amazon',
+    paymentMethod: 'card',
+    notes: 'Annual subscription'
+  },
+  {
+    id: 'exp_demo_023',
+    userId: 'local',
+    amount: 450.00,
+    description: 'Flight Tickets',
+    categoryId: 'cat_travel',
+    date: daysAgo(25),
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    merchant: 'Delta Airlines',
+    paymentMethod: 'card',
+    tags: ['vacation']
   }
 ];
 
@@ -397,7 +417,18 @@ export const DEMO_BUDGETS: Budget[] = [
     id: 'bgt_overall',
     userId: 'local',
     categoryId: null, // Overall budget
-    amount: 2000,
+    amount: 3000,
+    period: 'monthly',
+    startDate: new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString(),
+    spent: 0,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString()
+  },
+  {
+    id: 'bgt_groceries',
+    userId: 'local',
+    categoryId: 'cat_groceries',
+    amount: 400,
     period: 'monthly',
     startDate: new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString(),
     spent: 0,
@@ -408,7 +439,7 @@ export const DEMO_BUDGETS: Budget[] = [
     id: 'bgt_food',
     userId: 'local',
     categoryId: 'cat_food',
-    amount: 500,
+    amount: 300,
     period: 'monthly',
     startDate: new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString(),
     spent: 0,
@@ -416,10 +447,10 @@ export const DEMO_BUDGETS: Budget[] = [
     updatedAt: new Date().toISOString()
   },
   {
-    id: 'bgt_transport',
+    id: 'bgt_travel',
     userId: 'local',
-    categoryId: 'cat_transport',
-    amount: 300,
+    categoryId: 'cat_travel',
+    amount: 250,
     period: 'monthly',
     startDate: new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString(),
     spent: 0,
@@ -430,7 +461,7 @@ export const DEMO_BUDGETS: Budget[] = [
     id: 'bgt_entertainment',
     userId: 'local',
     categoryId: 'cat_entertainment',
-    amount: 200,
+    amount: 150,
     period: 'monthly',
     startDate: new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString(),
     spent: 0,

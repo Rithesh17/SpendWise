@@ -66,11 +66,28 @@ export async function startFirestoreSync() {
 		
 		isInitialSync = false;
 		
-		const seedCategoryIds = new Set(SEED_CATEGORIES.map(cat => cat.id));
-		const uniqueFirestoreCategories = firestoreCategories.filter(
-			cat => !seedCategoryIds.has(cat.id)
-		);
-		const mergedCategories = [...SEED_CATEGORIES, ...uniqueFirestoreCategories];
+		// Create a map of seed categories by ID for quick lookup
+		const seedCategoryMap = new Map(SEED_CATEGORIES.map(cat => [cat.id, cat]));
+		
+		// Create a map of Firebase categories by ID (these override seed defaults)
+		const firestoreCategoryMap = new Map(firestoreCategories.map(cat => [cat.id, cat]));
+		
+		// Merge: Start with seed categories, then override with Firebase versions if they exist
+		const mergedCategories: Category[] = SEED_CATEGORIES.map(seedCat => {
+			const firestoreVersion = firestoreCategoryMap.get(seedCat.id);
+			// If Firebase has a version of this seed category, use it (it overrides the seed)
+			if (firestoreVersion) {
+				return firestoreVersion;
+			}
+			return seedCat;
+		});
+		
+		// Add any Firebase categories that aren't seed categories (user-created categories)
+		firestoreCategories.forEach(firestoreCat => {
+			if (!seedCategoryMap.has(firestoreCat.id)) {
+				mergedCategories.push(firestoreCat);
+			}
+		});
 		
 		const currentUserCategories = currentCategories.filter(cat => cat.userId === currentUserId);
 		const currentSystemCategories = currentCategories.filter(cat => cat.userId === null);
@@ -200,9 +217,8 @@ export async function syncCategoryToFirestore(category: Category): Promise<void>
 		return;
 	}
 
-	if (category.userId === null) {
-		return;
-	}
+	// Note: Seed categories (userId === null) are now allowed to be synced
+	// after they've been converted to user-owned via updateCategory
 
 	if (category.userId !== currentUserId) {
 		category = { ...category, userId: currentUserId };

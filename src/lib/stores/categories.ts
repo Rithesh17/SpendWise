@@ -85,16 +85,23 @@ function createCategoriesStore() {
     
     /**
      * Update an existing category
+     * If updating a seed category (userId === null), convert it to user-owned and sync to Firebase
      */
     updateCategory: async (id: string, updates: Partial<Category>): Promise<boolean> => {
       let found = false;
       let updatedCategory: Category | null = null;
+      const currentUserId = get(userId);
       
       update(categories => {
         return categories.map(cat => {
           if (cat.id === id) {
             found = true;
-            updatedCategory = { ...cat, ...updates };
+            const shouldConvertToUserOwned = cat.userId === null && currentUserId !== null;
+            updatedCategory = { 
+              ...cat, 
+              ...updates,
+              userId: shouldConvertToUserOwned ? currentUserId : (updates.userId ?? cat.userId)
+            };
             return updatedCategory;
           }
           return cat;
@@ -102,7 +109,7 @@ function createCategoriesStore() {
       });
       
       // Sync to Firestore if authenticated (using dynamic import to avoid circular dependency)
-      if (found && updatedCategory && updatedCategory.userId) {
+      if (found && updatedCategory && currentUserId) {
         import('$lib/firebase/sync').then(({ syncCategoryToFirestore }) => {
           syncCategoryToFirestore(updatedCategory!).catch(err => {
             console.error('Failed to sync category update to Firestore:', err);
@@ -115,9 +122,16 @@ function createCategoriesStore() {
     
     /**
      * Delete a category
+     * Seed categories (userId === null) cannot be deleted
      */
     delete: async (id: string): Promise<boolean> => {
       const category = get({ subscribe }).find(cat => cat.id === id);
+      
+      // Prevent deletion of seed categories
+      if (category?.userId === null) {
+        return false;
+      }
+      
       const categoryUserId = category?.userId;
       
       let found = false;
