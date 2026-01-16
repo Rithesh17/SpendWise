@@ -582,7 +582,7 @@
 					{@const category = getCategoryInfo(expense.categoryId)}
 					{@const isSelected = selectedExpenseIds.has(expense.id)}
 					<a 
-						href={`${base}/expenses/${expense.id}`} 
+						href={`${base}/expenses/${encodeURIComponent(expense.id)}`} 
 						class="list-row" 
 						class:selected={isSelected}
 						data-sveltekit-preload-data="off"
@@ -627,7 +627,7 @@
 									// Use window.location for more reliable navigation on static sites
 									// This avoids SvelteKit's __data.json fetch issues
 									setTimeout(() => {
-										window.location.href = `${base}/expenses/${expense.id}?edit=true`;
+										window.location.href = `${base}/expenses/${encodeURIComponent(expense.id)}?edit=true`;
 									}, 0);
 								}}
 							>

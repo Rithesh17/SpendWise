@@ -10,8 +10,8 @@
 	import { formatCurrency, formatDate, formatRelativeDate } from '$lib/utils';
 	import type { Expense, PaymentMethod, ExpenseFormData } from '$lib/types';
 
-	// Get expense ID from route params
-	let expenseId = $derived($page.params.id);
+	// Get expense ID from route params and decode it
+	let expenseId = $derived($page.params.id ? decodeURIComponent($page.params.id) : null);
 	
 	// Check for edit mode from query params
 	let shouldStartEditing = $derived($page.url.searchParams.get('edit') === 'true');
@@ -32,25 +32,37 @@
 				
 				storesInitialized = true;
 			} catch (error) {
+				console.error('Error initializing stores:', error);
+				// Still mark as initialized so we don't hang forever
 				storesInitialized = true;
 			}
 		}
 	});
 	
 	let expense = $derived.by(() => {
-		if (!expenseId) return null;
+		if (!expenseId || !storesInitialized) return null;
 		
 		const allExpenses = $expenses;
+		// Try exact match first
 		let found = allExpenses.find(e => e.id === expenseId);
 		
+		// Try case-insensitive match
 		if (!found) {
 			found = allExpenses.find(e => e.id.toLowerCase() === expenseId.toLowerCase());
+		}
+		
+		// Try decoded match (in case of double encoding)
+		if (!found) {
+			const decodedId = decodeURIComponent(expenseId);
+			found = allExpenses.find(e => e.id === decodedId || e.id.toLowerCase() === decodedId.toLowerCase());
 		}
 		
 		return found || null;
 	});
 	
-	let expensesLoading = $derived(!storesInitialized || ($expenses.length === 0 && storesInitialized));
+	// Only show loading if stores aren't initialized yet
+	// Once initialized, if expenses array is empty, that just means no expenses exist
+	let expensesLoading = $derived(!storesInitialized);
 	
 	// Get category info
 	let category = $derived(expense ? $categories.find(c => c.id === expense.categoryId) : null);
@@ -72,34 +84,25 @@
 	});
 	
 	let redirectAttempted = $state(false);
-	let hasWaitedForLoad = $state(false);
 	
-	$effect(() => {
-		if (storesInitialized && !hasWaitedForLoad) {
-			const timeout = setTimeout(() => {
-				hasWaitedForLoad = true;
-			}, 4000);
-			return () => clearTimeout(timeout);
-		}
-	});
-	
+	// Redirect to expenses list if expense not found after stores are initialized
 	$effect(() => {
 		if (
+			browser &&
 			expenseId && 
 			storesInitialized &&
-			hasWaitedForLoad && 
 			!expensesLoading && 
-			$expenses.length > 0 &&
 			!expense && 
-			!redirectAttempted &&
-			window.location.pathname.includes(`/expenses/${expenseId}`)
+			!redirectAttempted
 		) {
-			redirectAttempted = true;
-			setTimeout(() => {
-				if (window.location.pathname.includes(`/expenses/${expenseId}`)) {
+			// Give a brief moment for the expense to be found
+			const timeout = setTimeout(() => {
+				if (!expense && window.location.pathname.includes(`/expenses/${expenseId}`)) {
+					redirectAttempted = true;
 					window.location.replace(`${base}/expenses`);
 				}
-			}, 1000);
+			}, 500);
+			return () => clearTimeout(timeout);
 		}
 	});
 	
@@ -206,7 +209,7 @@
 <div class="expense-detail-page">
 	<div class="container mx-auto px-4">
 		{#if !expense}
-			{#if !storesInitialized || !hasWaitedForLoad || expensesLoading}
+			{#if !storesInitialized || expensesLoading}
 				<PageHeader 
 					title="Loading..." 
 					showBackButton={true}
@@ -225,6 +228,8 @@
 					title="No expenses found"
 					message="You don't have any expenses yet. Redirecting to expenses list..."
 					icon="📋"
+					actionLabel="View All Expenses"
+					actionHref={`${base}/expenses`}
 				/>
 			{:else}
 				<PageHeader 
@@ -235,12 +240,10 @@
 					title="Expense not found"
 					message="This expense may have been deleted or doesn't exist. Redirecting to expenses list..."
 					icon="❌"
+					actionLabel="View All Expenses"
+					actionHref={`${base}/expenses`}
 				/>
 			{/if}
-				icon="🔍"
-				actionLabel="View All Expenses"
-				actionHref={`${base}/expenses`}
-			/>
 		{:else if isEditing}
 			<!-- Edit Mode -->
 			<PageHeader 
